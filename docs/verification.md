@@ -58,3 +58,38 @@ No physical Windows/macOS/Linux desktop session acceptance has been recorded.
 No publisher code signatures or macOS notarization are provided. Cloudflare
 local tests and dry-run do not deploy to a live account. The initial JPEG desktop
 profile is experimental; see `platforms.md` and `design.md` for limitations.
+
+## Candidate withheld after release recheck
+
+The initial branch run passed, but tag run `42288162779` independently exposed
+a real terminal burst defect before publication. `v0.1.0` remains immutable and
+has no GitHub Release or binary assets. A per-stream four-packet input queue
+could overflow after just five valid bytes, despite remaining receive credit.
+Browser diagnostics confirmed correct key events followed by stream closure and
+a host Shell Hangup. Repeated glyphs in xterm accessibility output were a redraw
+artifact after closure, not duplicated input on the wire. The fixes and deterministic regressions are verified for `0.1.1` as recorded below.
+
+## Fixed candidate 0.1.1
+
+The Rust and Web receive paths coalesce undispatched input within byte credit,
+preserve queued FIN order and keep RESET as failure. Two Rust regressions and
+three Web regressions cover byte-exact bursts, FIN, in-flight ownership, buffer
+limits, cleanup and connection-credit reuse. Pre-fix executions fail.
+
+- `bash scripts/check.sh`: exit 0; headless Rust 45 passed; desktop Rust 47
+  passed and one live-capture test ignored; Web 37 passed and production build
+  passed; Cloudflare 10 workerd tests and typecheck passed.
+- `cargo test --locked -p lightremote-native`: 16 passed.
+- Rebuilt actual headless CLI and relay, both version 0.1.1.
+- The unchanged `web/scripts/rust-smoke.ts` passed ten consecutive runs against
+  those binaries and the production browser bundle. Each run checked real PTY
+  output, host-applied resize, a 700 KB download, a 500 KB upload and explicit
+  headless desktop rejection. No artificial input delays, test weakening or
+  failure retries were added.
+
+The independent post-fix source review is recorded at the top of `review.md`.
+Local logs: `/tmp/lightremote-0.1.1-full-check.log`,
+`/tmp/lightremote-0.1.1-native-tests.log` and
+`/tmp/lightremote-0.1.1-browser-stress.json`. The last includes source/binary
+SHA-256 values and every iteration exit status; these local files are not release
+assets. Hosted tag CI and release publication remain separate delivery gates.

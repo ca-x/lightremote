@@ -1,5 +1,63 @@
 # Independent review ledger
 
+<!-- scoped-burst-review-start -->
+## Current scoped decision: 0.1.1 receive-burst fixes
+
+**Source review: PASS for C12 (Rust) and C13 (Web) at the three frozen hashes below. No unresolved P0/P1 was found in this patch scope. The receive-burst runtime incident is CLOSED on implementation-lead-executed browser stress evidence inspected by this reviewer.** Scoped source and runtime acceptance is complete; hosted 0.1.1 CI/release acceptance is not claimed.
+
+Scope: the pending-input delta and two new regressions in `crates/core/src/link.rs`, the receive-buffer delta in `web/src/link.ts`, and the three tests in `web/tests/receive-burst.test.ts`. Related read/consume/retire/reset paths were inspected to check their contracts. Services, native, relay, version changes and unrelated lifecycle work are outside this delta review. Existing C2/C3/C4/C7/C11 dispositions remain tied to their historical checkpoints.
+
+### Findings and accepted fixes
+
+- **C12, P1: valid Rust input rejected by packet count.** The implementation lead's packaged-binary reproduction during tag run [42288162779](https://github.com/lib-x/lightremote/actions/runs/42288162779) reached five received bytes and zero consumed bytes; the old four-slot input channel caused RESET. Current `link.rs:241` coalesces one pending suffix within the local receive limit; `:446` restores the exact record on Full instead of resetting. New bytes append after the queued prefix. Retry occurs on DATA, Consume and pump. FIN closes the sender only after its final record is enqueued; retirement also requires no pending suffix (`:487`). These changes address the reproduced source defect.
+- **C13, P1: equivalent Web receive packet-count rejection.** The old 256-chunk threshold rejected legitimate 4096/1024-byte bursts within 128KiB credit. Current `web/src/link.ts:133` enforces outstanding bytes and combines only an undispatched queued tail. `read()` removes a delivered chunk from that queue, so later input cannot change its bytes or FIN. The consume closure uses the final chunk length/FIN and executes once; failed streams ignore receive/consume. This addresses the sibling source defect without removing outbound admission limits.
+
+### Bounds, ordering and cleanup assessment
+
+Rust Session still enforces stream and aggregate connection receive credit before application events. The added limit is the smaller local stream/connection window (production default 64KiB); geometric pending growth requests no more than that limit. The four-slot channel remains bounded. Logical unconsumed payload is bounded by protocol credit; vector capacity, channel metadata and duplex buffering add bounded overhead, so credit is not an exact process-memory measurement. Consumption still follows successful bridge acceptance. Full preserves FIFO; empty and payload-bearing FIN cannot overtake pending data. RESET removes the pending suffix, aborts bridge workers and leaves the existing failed-stream read boundary intact. Late Consume finds no stream and cannot refund credit twice.
+
+Web outstanding includes delivered-but-unconsumed bytes and the queued suffix. Each new tail allocation is capped at 128KiB; growth may temporarily retain the old allocation. The normal `process()` path has one delivered chunk and one queued suffix, and the SDK also enforces aggregate connection credit. FIN is consumed only with its final chunk; retirement requires consumed FIN and zero outstanding bytes. Failure clears queued input and makes previously delivered consume closures inert. No low-latency or exact-RSS claim follows from these bounds.
+
+### Execution evidence and incident closure
+
+- **Rust, Boole-reported:** old source fails at byte five. Frozen-source regression feeds 65,536 patterned single-byte packets before bridge scheduling, with both FIN forms, and checks exact FIFO output, pending size/capacity, completion and no RESET. The additional cleanup regression covers pending DATA with/without FIN, worker termination, exactly 32 bytes of returned connection credit, ignored late Consume and full-window reuse by another stream. Both regression sources were independently inspected (`link.rs:1050`, `:1163`).
+- **Rust, Boole-reported:** `cargo test --locked -p lightremote-core` passes 11 unit tests plus one integration; the headless CLI `reset_upload` integration passes; core Clippy with warnings denied, docs and formatting pass. No dedicated execution log was saved; provenance is Boole's task report, not an independent test run by this reviewer.
+- **Web:** the reviewer inspected `/tmp/lightremote-web-burst-before.log`: both legitimate-burst cases fail on old source; the byte-window enforcement case passes. The implementation lead reports frozen-source typecheck, all 37 tests and production build passing. The three new test sources were independently inspected: exact bytes/FIN, unchanged in-flight chunk with idempotent consume, and rejection above 128KiB.
+- **Runtime incident CLOSED:** the implementation lead reports ten consecutive executions of unmodified `web/scripts/rust-smoke.ts` against rebuilt 0.1.1 CLI/relay binaries and the production Web bundle, with no added delays or retry changes. The reviewer inspected `/tmp/lightremote-0.1.1-browser-stress.json`: iterations 1–10 each record exit 0, the frozen core/Web source hashes, binary hashes and a distinct log path. All ten referenced logs were read and contain the real Chromium/Rust encrypted-TMP smoke PASS covering PTY output, resize, upload/download and the explicit headless-desktop error. The smoke script has no worktree diff. Execution owner is the implementation lead; this reviewer inspected the artifacts and did not rerun the browser. This satisfies the scoped runtime gate for the reproduced incident.
+- **Current local full validation:** implementation lead reports `bash scripts/check.sh` exit 0. The reviewer inspected `/tmp/lightremote-0.1.1-full-check.log` and the script: 45 headless Rust tests pass; 47 desktop/default Rust tests pass with one live-capture test explicitly ignored; Web typecheck, 37 tests and production build complete; Cloudflare typecheck and 10 tests complete. Core's 11 unit tests plus one integration pass in both Rust profiles. `/tmp/lightremote-0.1.1-native-tests.log` separately records 16 passing native tests. These are current local execution results, not physical-desktop or hosted-release acceptance.
+- **Separate release status:** hosted 0.1.1 CI, tag/release jobs, published assets, signing and physical-platform acceptance are outside this closure. No hosted-release pass is claimed. The earlier frozen report's CI observations remain historical.
+
+No broad tests were rerun by this reviewer, as requested. Source hashes and `git diff --check` were checked locally. Only this ledger was edited. The prior frozen report below is preserved unchanged and describes earlier checkpoints, including its then-current CI observations.
+
+### Execution artifact checkpoint
+
+Execution owner: implementation lead. Artifact inspection and source-hash comparison: this reviewer. The stress manifest records CLI SHA-256 `f10ab683067e4037bd1362c4bcad572e45d2f6173bb78c2a5911601696fc3f45` and relay SHA-256 `ebbe8c51d9fc60a245b1963e21c38f397abc6e46fdba2c4a2cdef44025150429`; these are manifest provenance, not a separate binary rebuild by this reviewer.
+
+| Inspected artifact | SHA-256 |
+| --- | --- |
+| `/tmp/lightremote-0.1.1-browser-stress.json` | `fade73d239abf3d10cb1c43d57412e9f50004840fd93f7094211bf9051879e33` |
+| `/tmp/lightremote-0.1.1-full-check.log` | `cbab63119c0a9fdb94bc85ef05d434bd860817e70ae63397f8049f1850a969fd` |
+| `/tmp/lightremote-0.1.1-native-tests.log` | `e7398b607dcc365c0b3dd852c1f968f2592f208930af67345a4fb440872b95ed` |
+
+The ten browser logs are `/tmp/lightremote-0.1.1-browser-{1..10}.log`; each contains the same 139-byte PASS output, SHA-256 `f14d0c1661bda0e99254f144e986cade28d6e10b7dd166de6bc5f1d697fb5e21`. Individual exit statuses come from the stress manifest, not from inferred success text alone.
+
+Report frozen for the 0.1.1 commit/tag handoff after this evidence update. C12/C13 source fixes and the scoped runtime incident are closed. TMP 0.1.0 and protocol scope are unchanged. No source edits, broad test reruns, commit, tag, push or publication were performed by this reviewer.
+
+### Frozen patch source checkpoint
+
+Worktree baseline: `7653671ce0ee68f7eec6a347d8ce1fec5a9e335c`; reviewed patches are uncommitted at this checkpoint. All three hashes were independently read and match their owners' freeze reports.
+
+| File | SHA-256 |
+| --- | --- |
+| `crates/core/src/link.rs` | `43c476604462071509f4636c41096a94c828bbcea2636141fd554942952accfe` |
+| `web/src/link.ts` | `9844a6b84954d381567e7e437cac372a3b2cc44f291892c364886a47e2c571cb` |
+| `web/tests/receive-burst.test.ts` | `8dea3effaf1a9cf905d80f7d6505c7b7674d4f5b0a0ff5b8fd7eb24336755178` |
+
+Changes after these hashes require a delta review. The 0.1.1 implementation scope is an implementation-lead decision under delegated design authority. The immutable v0.1.0 tag is not replaced by this report.
+<!-- scoped-burst-review-end -->
+
+## Earlier frozen review (unchanged)
+
 ## Latest decision
 
 Post-freeze execution evidence: hosted CI run `42285530612` completed successfully

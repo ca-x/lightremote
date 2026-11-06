@@ -3,7 +3,7 @@
 基于 TMP 的远程桌面、终端和文件传输项目，提供 Web 与 NSH 原生客户端。
 主机程序与自建中继使用 Rust，也支持 Cloudflare Workers + Durable Objects 中继。
 
-当前是 0.1.0 初版。桌面视频使用实验性 JPEG 流；编译、自动化联调、真实桌面
+当前是 0.1.1 初版。桌面视频使用实验性 JPEG 流；编译、自动化联调、真实桌面
 验证和签名状态分别记录在 [CAPABILITIES.md](CAPABILITIES.md)。桌面、Shell、
 文件、剪贴板和截图都是应用层 profile，不修改 TMP 通用协议。
 

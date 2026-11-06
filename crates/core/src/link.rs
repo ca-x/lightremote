@@ -222,6 +222,7 @@ impl LinkHandle {
 }
 struct LocalStream {
     input: Option<mpsc::Sender<(Vec<u8>, bool)>>,
+    pending_input: Option<(Vec<u8>, bool)>,
     opening: Option<(
         Reply<MuxStream>,
         DuplexStream,
@@ -235,6 +236,32 @@ struct LocalStream {
     tasks: Vec<tokio::task::AbortHandle>,
     status: watch::Sender<StreamStatus>,
     receive_fin: Arc<AtomicBool>,
+}
+impl LocalStream {
+    fn buffer_input(&mut self, bytes: Vec<u8>, fin: bool, limit: usize) -> Result<()> {
+        ensure!(bytes.len() <= limit, "stream receive buffer exceeds window");
+        if let Some((pending, pending_fin)) = &mut self.pending_input {
+            ensure!(!*pending_fin, "input received after FIN");
+            let len = pending.len() + bytes.len();
+            ensure!(len <= limit, "stream receive buffer exceeds window");
+            if len > pending.capacity() {
+                // Grow geometrically for single-byte DATA without reserving
+                // beyond the advertised receive window.
+                let capacity = pending
+                    .capacity()
+                    .saturating_mul(2)
+                    .max(CHUNK)
+                    .max(len)
+                    .min(limit);
+                pending.reserve_exact(capacity - pending.len());
+            }
+            pending.extend_from_slice(&bytes);
+            *pending_fin = fin;
+        } else {
+            self.pending_input = Some((bytes, fin));
+        }
+        Ok(())
+    }
 }
 impl Drop for LocalStream {
     fn drop(&mut self) {
@@ -268,6 +295,7 @@ enum Output {
 }
 struct Runtime {
     session: Session,
+    receive_window: usize,
     commands: mpsc::Sender<Command>,
     streams: BTreeMap<u32, LocalStream>,
     incoming: mpsc::Sender<IncomingStream>,
@@ -392,6 +420,7 @@ impl Runtime {
             id,
             LocalStream {
                 input: Some(input),
+                pending_input: None,
                 opening: None,
                 pending: None,
                 remote_fin: false,
@@ -414,6 +443,32 @@ impl Runtime {
             (application, status_rx)
         }
     }
+    fn flush_input(&mut self, id: u32) -> Result<()> {
+        let Some(state) = self.streams.get_mut(&id) else {
+            return Ok(());
+        };
+        let Some((bytes, fin)) = state.pending_input.take() else {
+            return Ok(());
+        };
+        match state
+            .input
+            .as_ref()
+            .context("stream receive half closed")?
+            .try_send((bytes, fin))
+        {
+            Ok(()) => {
+                if fin {
+                    // Keep the sender until the final record is queued, so
+                    // bridge EOF cannot overtake pending bytes or FIN.
+                    state.input.take();
+                }
+                self.retire(id);
+            }
+            Err(mpsc::error::TrySendError::Full(record)) => state.pending_input = Some(record),
+            Err(mpsc::error::TrySendError::Closed(_)) => self.reset(id)?,
+        }
+        Ok(())
+    }
     fn reset(&mut self, id: u32) -> Result<()> {
         if let Some(mut state) = self.streams.remove(&id) {
             if let Some((reply, _, _)) = state.opening.take() {
@@ -430,11 +485,9 @@ impl Runtime {
         Ok(())
     }
     fn retire(&mut self, id: u32) {
-        if self
-            .streams
-            .get(&id)
-            .is_some_and(|s| s.local_fin && s.remote_fin && s.consumed == s.received)
-            && let Some(state) = self.streams.remove(&id)
+        if self.streams.get(&id).is_some_and(|s| {
+            s.local_fin && s.remote_fin && s.consumed == s.received && s.pending_input.is_none()
+        }) && let Some(state) = self.streams.remove(&id)
         {
             state.status.send_replace(StreamStatus::Completed);
         }
@@ -504,19 +557,11 @@ impl Runtime {
                     if fin {
                         state.receive_fin.store(true, Ordering::Release);
                     }
-                    let result = state
-                        .input
-                        .as_ref()
-                        .context("stream receive half closed")?
-                        .try_send((bytes, fin));
-                    if fin {
-                        state.input.take();
-                    }
-                    if result.is_err() {
-                        self.reset(id)?;
-                    } else {
-                        self.retire(id);
-                    }
+                    // Session::receive has already enforced stream and
+                    // connection credit. Packet count is not a byte bound:
+                    // coalesce a valid burst while the bridge is unscheduled.
+                    state.buffer_input(bytes, fin, self.receive_window)?;
+                    self.flush_input(id)?;
                 }
             }
             Event::Reset(id, _, _) => {
@@ -601,6 +646,7 @@ impl Runtime {
                     state.consumed += count as u64;
                     let p = self.session.consume(id, count)?;
                     self.emit(p)?;
+                    self.flush_input(id)?;
                     self.retire(id);
                 }
             }
@@ -645,7 +691,10 @@ impl Runtime {
             .map(|(id, _)| *id)
             .collect();
         for id in ids {
-            let state = self.streams.get_mut(&id).context("stream state")?;
+            self.flush_input(id)?;
+            let Some(state) = self.streams.get_mut(&id) else {
+                continue;
+            };
             if let Some((bytes, fin, reply)) = state.pending.take() {
                 match self.session.send(id, bytes.clone(), fin) {
                     Ok(packet) => {
@@ -751,6 +800,7 @@ async fn connect_inner(
         tunnel_mux::Role::Responder
     };
     let mut runtime = Runtime {
+        receive_window: settings.stream_window.min(settings.connection_window) as usize,
         session: Session::new(
             tmp_role,
             settings,
@@ -943,6 +993,7 @@ mod tests {
         let (output, rx) = mpsc::channel(8);
         let mut runtime = Runtime {
             session,
+            receive_window: settings.stream_window.min(settings.connection_window) as usize,
             commands,
             streams: BTreeMap::new(),
             incoming,
@@ -979,6 +1030,7 @@ mod tests {
                 stream,
                 LocalStream {
                     input: None,
+                    pending_input: None,
                     opening: None,
                     pending: None,
                     remote_fin: false,
@@ -994,6 +1046,195 @@ mod tests {
         }
         (runtime, rx, ids)
     }
+    #[tokio::test]
+    async fn tiny_data_burst_preserves_bytes_and_fin_without_scheduling_bridge() -> Result<()> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            // A current-thread runtime cannot schedule the bridge until the
+            // first await below. Every packet is valid under the receive credit.
+            for fin_with_payload in [false, true] {
+                let (mut runtime, _output, [id, _]) = runtime_with_two_streams();
+                let (commands, mut command_rx) = mpsc::channel(QUEUE);
+                runtime.commands = commands;
+                let (output_tx, mut output) = mpsc::channel(QUEUE);
+                runtime.output = output_tx;
+                let (io, status) = runtime.attach(id, None, None);
+                let mut stream = MuxStream {
+                    id,
+                    io,
+                    status,
+                    receive_fin: runtime.streams[&id].receive_fin.clone(),
+                };
+                let expected: Vec<u8> = (0..65536).map(|n| (n % 251) as u8).collect();
+                for (index, byte) in expected.iter().enumerate() {
+                    let outcome = runtime.session.receive(pb::Packet {
+                        stream_id: id,
+                        body: Some(pb::packet::Body::Data(pb::Data {
+                            payload: vec![*byte],
+                            fin: fin_with_payload && index + 1 == expected.len(),
+                        })),
+                    })?;
+                    runtime.emit(outcome.outbound)?;
+                    for event in outcome.events {
+                        runtime.event(event)?;
+                    }
+                    runtime.pump()?;
+                    ensure!(
+                        runtime.streams.contains_key(&id),
+                        "valid tiny DATA burst reset after {} bytes",
+                        index + 1
+                    );
+                    let state = &runtime.streams[&id];
+                    assert_eq!(state.consumed, 0, "bridge ran before the burst finished");
+                    assert!(state.received <= 65536, "receive credit exceeded");
+                    if let Some((pending, _)) = &state.pending_input {
+                        assert!(
+                            pending.len() <= 65536,
+                            "pending bytes exceed receive window"
+                        );
+                        assert!(
+                            pending.capacity() <= 65536,
+                            "pending allocation exceeds receive window"
+                        );
+                    }
+                }
+                if !fin_with_payload {
+                    let outcome = runtime.session.receive(pb::Packet {
+                        stream_id: id,
+                        body: Some(pb::packet::Body::Data(pb::Data {
+                            payload: Vec::new(),
+                            fin: true,
+                        })),
+                    })?;
+                    runtime.emit(outcome.outbound)?;
+                    for event in outcome.events {
+                        runtime.event(event)?;
+                    }
+                }
+                assert_eq!(runtime.streams[&id].received, expected.len() as u64);
+                assert_eq!(runtime.streams[&id].consumed, 0);
+                let (pending, fin) = runtime.streams[&id]
+                    .pending_input
+                    .as_ref()
+                    .context("pending burst")?;
+                assert_eq!(pending, &expected[4..], "pending input lost FIFO order");
+                assert!(*fin, "FIN must stay behind all pending bytes");
+                assert!(stream.receive_fin.load(Ordering::Acquire));
+                assert!(
+                    output.try_recv().is_err(),
+                    "burst unexpectedly emitted a packet"
+                );
+                let mut received = Vec::new();
+                {
+                    let read = stream.read_to_end(&mut received);
+                    tokio::pin!(read);
+                    loop {
+                        tokio::select! {
+                            result=&mut read=>{result?;break;},
+                            command=command_rx.recv()=>{
+                                runtime.command(command.context("bridge command")?)?;
+                                runtime.pump()?;
+                            }
+                        }
+                    }
+                }
+                assert_eq!(received, expected, "tiny DATA bytes changed or were lost");
+                stream.shutdown().await?;
+                while runtime.streams.contains_key(&id) {
+                    runtime.command(command_rx.recv().await.context("bridge completion")?)?;
+                    runtime.pump()?;
+                }
+                stream.completed().await?;
+                let mut fins = 0;
+                while let Ok(Output::Packet { packet, .. }) = output.try_recv() {
+                    match packet.body {
+                        Some(pb::packet::Body::Reset(_)) => bail!("burst emitted RESET"),
+                        Some(pb::packet::Body::Data(data)) if data.fin => fins += 1,
+                        _ => {}
+                    }
+                }
+                assert_eq!(fins, 1, "response FIN missing or duplicated");
+            }
+            Ok::<_, anyhow::Error>(())
+        })
+        .await?
+    }
+
+    #[tokio::test]
+    async fn reset_discards_unscheduled_coalesced_input_and_bridge_workers() -> Result<()> {
+        for fin in [false, true] {
+            let (mut runtime, mut output, [id, second]) = runtime_with_two_streams();
+            let (io, status) = runtime.attach(id, None, None);
+            let mut stream = MuxStream {
+                id,
+                io,
+                status,
+                receive_fin: runtime.streams[&id].receive_fin.clone(),
+            };
+            for byte in 0..32 {
+                let outcome = runtime.session.receive(pb::Packet {
+                    stream_id: id,
+                    body: Some(pb::packet::Body::Data(pb::Data {
+                        payload: vec![byte],
+                        fin: fin && byte == 31,
+                    })),
+                })?;
+                for event in outcome.events {
+                    runtime.event(event)?;
+                }
+            }
+            runtime.reset(id)?;
+            assert!(
+                !runtime.streams.contains_key(&id),
+                "reset retained buffered stream"
+            );
+            assert_eq!(
+                stream.receive_fin.load(Ordering::Acquire),
+                fin,
+                "reset changed authenticated FIN state"
+            );
+            let error = stream
+                .read(&mut [0; 1])
+                .await
+                .expect_err("reset became EOF or data");
+            assert_eq!(error.kind(), std::io::ErrorKind::ConnectionReset);
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while runtime.workers.join_next().await.is_some() {}
+            })
+            .await?;
+            let mut resets = 0;
+            let mut reclaimed = 0;
+            while let Ok(Output::Packet { packet, .. }) = output.try_recv() {
+                match packet.body {
+                    Some(pb::packet::Body::Reset(_)) if packet.stream_id == id => resets += 1,
+                    Some(pb::packet::Body::Window(window)) if packet.stream_id == 0 => {
+                        reclaimed += window.credit
+                    }
+                    _ => bail!("reset emitted unexpected packet"),
+                }
+            }
+            assert_eq!(resets, 1, "reset missing or duplicated");
+            assert_eq!(
+                reclaimed, 32,
+                "connection receive credit reclaimed incorrectly"
+            );
+            runtime.command(Command::Consume { id, count: 32 })?;
+            runtime.pump()?;
+            assert!(
+                output.try_recv().is_err(),
+                "late Consume returned credit twice"
+            );
+            // All connection credit must be reusable by another accepted stream.
+            runtime.session.receive(pb::Packet {
+                stream_id: second,
+                body: Some(pb::packet::Body::Data(pb::Data {
+                    payload: vec![7; 65536],
+                    fin: false,
+                })),
+            })?;
+        }
+        Ok(())
+    }
+
     #[tokio::test]
     async fn fair_credit_rotation_and_unclaimed_open_cleanup() -> Result<()> {
         let (mut runtime, mut output, [first, second]) = runtime_with_two_streams();

@@ -48,6 +48,9 @@ export interface Chunk {
   fin: boolean;
   consume(): void;
 }
+interface BufferedChunk extends Chunk {
+  storage: Uint8Array;
+}
 /** Each read requires explicit consume, after processing or bounded acceptance. */
 export class MuxStream {
   readonly accepted = deferred<void>();
@@ -59,7 +62,7 @@ export class MuxStream {
   outstanding = 0;
   acked = false;
   private ending = false;
-  private queue: Chunk[] = [];
+  private queue: BufferedChunk[] = [];
   private waiter?: ReturnType<typeof deferred<Chunk | null>>;
   private error?: Error;
   constructor(
@@ -128,9 +131,9 @@ export class MuxStream {
     this.link.reset(this, reason);
   }
   receive(bytes: Uint8Array, fin: boolean): void {
+    if (this.error) return;
     if (
       this.remoteFin ||
-      this.queue.length >= MAX_CHUNKS ||
       this.outstanding + bytes.length > STREAM_WINDOW
     ) {
       this.reset("Receive queue exceeded");
@@ -138,16 +141,35 @@ export class MuxStream {
     }
     this.remoteFin = fin;
     this.outstanding += bytes.length;
+    // Only queued, undispatched input may be combined. Its total byte size is
+    // already bounded by receive credit, regardless of how many packets arrive.
+    const tail = this.queue.at(-1);
+    if (tail) {
+      const length = tail.bytes.length + bytes.length;
+      if (length > tail.storage.length) {
+        const storage = new Uint8Array(
+          Math.min(STREAM_WINDOW, Math.max(16384, tail.storage.length * 2, length)),
+        );
+        storage.set(tail.bytes);
+        tail.storage = storage;
+      }
+      tail.storage.set(bytes, tail.bytes.length);
+      tail.bytes = tail.storage.subarray(0, length);
+      tail.fin = fin;
+      this.link.retire(this);
+      return;
+    }
     let consumed = false;
-    const chunk: Chunk = {
+    const chunk: BufferedChunk = {
       bytes,
+      storage: bytes,
       fin,
       consume: () => {
         if (consumed || this.error) return;
         consumed = true;
-        if (fin) this.remoteFinConsumed = true;
-        this.outstanding -= bytes.length;
-        this.link.consume(this, bytes.length);
+        if (chunk.fin) this.remoteFinConsumed = true;
+        this.outstanding -= chunk.bytes.length;
+        this.link.consume(this, chunk.bytes.length);
       },
     };
     if (this.waiter) {

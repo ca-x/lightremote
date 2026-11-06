@@ -6,7 +6,7 @@ Remote desktop, terminal and files over [TMP](https://github.com/lib-x/tm), with
 a browser controller and an NSH native controller. The host is written in Rust.
 Run your own relay in Docker or deploy the compatible Cloudflare Worker.
 
-**Early development, v0.1.0.** JPEG desktop streaming is experimental. Platform
+**Early development, v0.1.1.** JPEG desktop streaming is experimental. Platform
 builds, automated tests, physical desktop checks and signing are tracked separately
 in [CAPABILITIES.md](CAPABILITIES.md). The application profiles are defined in
 [docs/design.md](docs/design.md); they do not extend TMP's wire protocol.

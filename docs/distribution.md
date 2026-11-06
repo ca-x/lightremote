@@ -83,7 +83,7 @@ choose which version to put on `PATH`.
 ## Tag release
 
 1. Set the workspace version and commit the source and lockfiles. Run CI.
-2. Push a tag such as `v0.1.0` whose entire value matches `v` plus the workspace
+2. Push a tag such as `v0.1.1` whose entire value matches `v` plus the workspace
    version. Prereleases require a matching version such as `0.2.0-rc.1`.
 3. `release.yml` validates the tag, runs all CI checks and the full native
    platform matrix, then publishes the GHCR relay image.
@@ -102,13 +102,13 @@ expected target/component is missing or an unexpected file appears.
 For a local packaging check, build the executables first, then use:
 
 ```sh
-python3 scripts/release.py binaries --version v0.1.0 \
+python3 scripts/release.py binaries --version v0.1.1 \
   --target x86_64-unknown-linux-gnu \
   --binary-dir target/x86_64-unknown-linux-gnu/release \
   --headless-dir target/headless/x86_64-unknown-linux-gnu/release --output dist
-python3 scripts/release.py web --version v0.1.0 --web-dir web/dist --output dist
+python3 scripts/release.py web --version v0.1.1 --web-dir web/dist --output dist
 # Run once all five target archives have been collected:
-python3 scripts/release.py checksums --version v0.1.0 --directory dist
+python3 scripts/release.py checksums --version v0.1.1 --directory dist
 ```
 
 The packager requires Python 3.11 or newer. To check downloaded files on Linux,

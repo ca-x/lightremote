@@ -66,3 +66,9 @@ npm run test:rust
 ```
 
 This starts a loopback Rust relay serving `dist`, a headless Rust host with a temporary share under `web/test-results`, and Chromium. It verifies real `/bin/sh` PTY output, host-applied `stty size` after resize, a 700 KB download, a 500 KB upload checked against the host filesystem, and an explicit unavailable-desktop error. It never builds or changes sibling sources and does not print the invitation. The run passed against the locally prebuilt binaries on 2026-11-07. Physical capture is not claimed.
+
+Tiny credited DATA packets coalesce only while queued and undispatched. The
+128 KiB receive window bounds their combined bytes; geometric storage growth
+avoids quadratic copying, and an already-delivered chunk is never mutated.
+A genuine FIN remains after its queued payload, with credit returned once upon
+application consumption. Packet count alone does not reset a valid input burst.

@@ -2438,7 +2438,7 @@ dependencies = [
 
 [[package]]
 name = "lightremote"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -2455,7 +2455,7 @@ dependencies = [
 
 [[package]]
 name = "lightremote-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2478,7 +2478,7 @@ dependencies = [
 
 [[package]]
 name = "lightremote-native"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -2501,7 +2501,7 @@ dependencies = [
 
 [[package]]
 name = "lightremote-relay"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2519,7 +2519,7 @@ dependencies = [
 
 [[package]]
 name = "lightremote-services"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "arboard",
