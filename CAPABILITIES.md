@@ -25,7 +25,7 @@ experimental until a real OS session is tested.
 | Linux x64 headless | portable-pty; cap-std files | Build passed | 43 tests + PTY/files encrypted E2E passed | N/A | Unsigned |
 | Linux x64 host desktop | xcap; enigo X11; arboard | Build/check passed | Desktop unit/service tests passed; live test skipped | Not verified | Unsigned |
 | Linux Wayland | Partial upstream capture; no complete native injection path | Experimental | Not verified | Not verified | Unsigned |
-| Linux x64 NSH | Native Rust UI / GTK4 + native input surfaces | Build passed | 14 tests passed | Not verified | Unsigned |
+| Linux x64 NSH | Native Rust UI / GTK4 + native input surfaces | Build passed | 16 tests passed; explicit clipboard controls | Not verified | Unsigned |
 | Linux arm64 | Host, relay, headless, NSH / CI runner | Pending CI | Pending CI | Not verified | Unsigned |
 | Windows x64 | xcap, enigo, portable-pty / NSH | Pending CI | Pending CI | Not verified; UAC/session0 unsupported | Unsigned |
 | macOS x64/arm64 | xcap, enigo, PTY / NSH AppKit | Pending CI | Pending CI | Not verified; permissions required | Unsigned, not notarized |

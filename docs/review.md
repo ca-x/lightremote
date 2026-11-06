@@ -4,7 +4,9 @@
 
 **Scoped final review: PASS for C2, C3, C4, C7 and C11. These five findings are closed for the exact source checkpoint below. No unresolved P0/P1 was found in these reviewed paths.**
 
-Basis: independent source re-review plus the implementation lead's explicit report that the targeted regressions passed. This reviewer inspected the regression code but did not independently rerun target tests. This is a five-finding review sign-off, not a claim that full repository/CI, relay, native, physical-desktop or release validation has completed.
+**Local final validation: PASS for `bash scripts/check.sh`. Exit 0 is reported by the implementation lead; the final output log was inspected by this reviewer. Hosted CI is [in progress](https://github.com/lib-x/lightremote/actions/runs/42284398244) for published commit `49ef5ea` (status checked through GitHub Actions).**
+
+Basis: independent source re-review, inspected regression code, implementation-lead-reported test execution, and inspection of the final local check log. This reviewer did not independently rerun target tests. The five-finding sign-off and the successful local script are recorded separately from hosted CI, native/physical-platform acceptance and publication.
 
 | Finding | Final scoped disposition | Source and regression evidence |
 | --- | --- | --- |
@@ -16,23 +18,27 @@ Basis: independent source re-review plus the implementation lead's explicit repo
 
 The reported C7 command is `cargo test -p lightremote --no-default-features --test reset_upload`. The test's source at cli/tests/reset_upload.rs:40-89 waits until the staging file has the declared size before RESET, then asserts service error, absent destination and no staging leak. Lines 91-113 verify subsequent successful work on the same encrypted connection. It therefore exercises the original failure path rather than merely cancelling an unused stream. It invokes the real host service adapter directly; CLI dispatch was checked separately at main.rs:161.
 
-## Separate outstanding work
+## Validation status and remaining scope
 
 - **Relay/tiny-window evidence provided:** relay owner reports final PASS after the fair one-pending/backpressure patch, including current core 9 unit tests plus 1 integration test and the 512KiB tiny-window/GOAWAY case. This reviewer did not independently retest or re-review the latest relay patch. The provided desktop log separately confirms the named core test and relay test outcomes.
-- **Full validation remains OPEN:** the implementation lead reports the desktop-enabled `cargo test --locked` run passed, including later core cancellation changes. Its log was inspected as described below. The headless full run had a 3-second canonical-EOF timeout flake; its fix is in progress. Desktop success does not close headless/full-profile validation, and no full-validation or release pass is declared.
+- **Local full check script: PASS.** The final `bash scripts/check.sh` run completed with exit 0 as reported by the implementation lead, and its log was inspected. Both headless and default/desktop Rust profiles pass, including canonical shell input FIN. The previous headless full-suite execution pending item is closed by this run. Hosted CI is [in progress](https://github.com/lib-x/lightremote/actions/runs/42284398244) for `49ef5ea`; no hosted-CI success is claimed.
 - **Other observations:** C1 FIFO/Finish and C9 decoder.finish fixes were inspected in earlier checkpoints. Heartbeat scheduling at 840-847 and the 60-second drain/PONG bound at 854-856 are present in the current core. C8 input-FIN/output-drain source changes were inspected separately; full PTY/process and platform evidence is recorded by that review owner. This scoped decision does not silently approve those independent work areas.
 - **Product/release evidence:** web/native, physical desktops, Cloudflare deployment and signing retain their own statuses. A missing unrelated execution report does not turn C2/C3/C4/C7/C11 back into source defects.
 
 This reviewer owns this file and changed only this ledger. Scope choices were implementation-lead decisions under delegated design authority, not explicit user quotations. Native and reference-project status is not inferred from this five-finding review.
 
-## Evidence update and ledger freeze
+## Final local execution evidence and report freeze
 
-- Execution owner: implementation lead; relay-owner final PASS is owner-reported. This reviewer read the supplied artifact and did not execute the target tests.
-- Artifact: `/tmp/lightremote-desktop-tests.log`, SHA-256 `2ff9040b88d65002a1a4986c49d40b003c87e439852111ebcd0e6fa177bdd466`. The command `cargo test --locked` and desktop-enabled configuration are reported by the lead; the log is execution output, not a capture of its invocation or exit status.
-- Inspected log: core 9 unit tests passed, core roundtrip integration 1 passed, encrypted reset_upload integration 1 passed, relay 10 tests passed, services 5 unit tests passed, services integration 19 passed with 1 physical-capture test explicitly ignored. The log reaches successful doc-test results and has no failed test summary.
-- The log includes passing fair-credit/open-cleanup, unwritten-data, tiny-window GOAWAY, canonical shell input FIN, normal shell FIN output drain, and drain-deadline cases. These are artifact-inspected results, not independent reruns by this reviewer.
-- Headless canonical-EOF flake: lead reports one 3-second timeout in the separate full headless run; fix and full rerun are pending. Do not mark full validation complete from the desktop run or the scoped defect closures.
-- Freeze: this ledger is frozen after this evidence update. Subsequent final status checks will be read-only; no further ledger/source edits or broad re-review is undertaken here without new task steering. The historical open findings remain superseded by the current scoped decisions.
+- Command: `bash scripts/check.sh`; execution owner: implementation lead; reported exit status: 0. This reviewer inspected the script and supplied output, rather than independently rerunning target code.
+- Final artifact: `/tmp/lightremote-final-checks-3.log`, SHA-256 `0b7535074a6ef6945087c19e5e72b9a95ae35f39e9549a613e93eede41df5d07`.
+- Script inspected at freeze: `scripts/check.sh`, SHA-256 `ad74f09340c5df3b93ed2c36c4e70c80074949584acacde8732e6f260c79ef49`. It uses `set -euo pipefail` and checks Rust formatting, headless/default-profile Clippy with warnings denied, Rust tests, Web typecheck/tests/build and Cloudflare typecheck/tests.
+- Rust log: both profiles report core 9 unit tests, core roundtrip integration 1, encrypted RESET-upload integration 1 and relay 10 passing. Headless services report 2 unit plus 20 integration tests passing. Default/desktop services report 5 unit plus 19 integration tests passing, with 1 physical-capture test explicitly ignored. Doc tests finish successfully in both profiles.
+- The previously flaky canonical shell input-FIN case passes in both profile sections of this final log. The earlier headless execution failure is historical; no local full-suite execution is left pending on that basis.
+- Web log: typecheck succeeds, 34 tests pass with 0 failures, and the production build completes. Cloudflare log: typecheck succeeds and 10 tests pass. The log reaches the script's final Cloudflare test stage successfully.
+- Scope of this script: Rust uses Cargo default-members, not the whole workspace/native member; Web tests are the configured Node test suite. Hosted CI, native-platform builds, browser/physical-desktop acceptance and live deployment retain their own evidence. Local script success is not recorded as completion of those separate activities.
+- Earlier desktop evidence remains traceable at `/tmp/lightremote-desktop-tests.log`, SHA-256 `2ff9040b88d65002a1a4986c49d40b003c87e439852111ebcd0e6fa177bdd466`; it is superseded by the final local run for execution status.
+- Hosted CI evidence: initial source commit `49ef5ea34f59e8ebbc1a365d0674dc81c227f97d` is pushed. [Actions run 42284398244](https://github.com/lib-x/lightremote/actions/runs/42284398244) was read via `gh run view` and returned `status=in_progress`, an empty conclusion, and that exact head SHA. Local HEAD matches. This is a frozen status observation, not a final CI result.
+- Freeze: report frozen after this explicitly requested hosted-CI status update. Scoped findings C2/C3/C4/C7/C11 remain closed. Hosted CI has no final verdict at this checkpoint. No source edits, target test execution, commit/push or publication was performed by this reviewer.
 
 ## Final scoped source checkpoint
 

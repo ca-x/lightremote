@@ -1,5 +1,5 @@
 //! Native NSH controls; all application data stays on the Rust side.
-use crate::client::{Client, Command, State};
+use crate::client::{Client, Command, MAX_CLIPBOARD_BYTES, State, validate_clipboard_text};
 use nsh_base::TerminalEvent;
 use nsh_base::{Terminal, TerminalApi, button, input, terminal};
 use nsh_core::element::NativeEvent;
@@ -56,6 +56,19 @@ pub fn App() -> impl IntoElement {
                 .into_element();
         }
     };
+    let clipboard_draft = signal(String::new());
+    let clipboard_seen = Cell::new(0_u64);
+    effect(move || {
+        let revision = snapshot.with(|s| s.clipboard_revision);
+        if clipboard_seen.replace(revision) != revision {
+            clipboard_draft.set(snapshot.with_untracked(|s| s.clipboard.clone()));
+        }
+    });
+    let clipboard_read = client.clone();
+    let clipboard_write = client.clone();
+    let clipboard_edit = client.clone();
+    let clipboard_paste = client.clone();
+    let clipboard_copy = client.clone();
     let invitation = signal(String::new());
     let display = signal("0".to_owned());
     let terminal_ref = component_ref::<Terminal>();
@@ -157,6 +170,38 @@ pub fn App() -> impl IntoElement {
                     .child(action("Send text", move || {
                         send_text.send(Command::Text(remote_text.get_untracked()));
                         remote_text.set(String::new());
+                    })))
+                .child(heading("Clipboard"))
+                .child(text("Explicit text transfer only · 256 KiB maximum · Read remote replaces the editor; it does not change your local clipboard.").text_sm())
+                .child(input().multiline(true).value(move || clipboard_draft.get())
+                    .on_change(move |value: &str| {
+                        // Keep the editor and its draft identical, even while invalid;
+                        // writes validate again so stale valid text is never sent instead.
+                        clipboard_draft.set(value.to_owned());
+                        if let Err(error) = validate_clipboard_text(value) { clipboard_edit.report(&error.to_string()); }
+                    })
+                    .max_length(MAX_CLIPBOARD_BYTES as u32)
+                    .placeholder("Read remote clipboard, paste local text, or type here")
+                    .w_full().h(px(140.0)).px_3().py_2().border_1().border_color(rgb(0x94a3b8)).rounded_md())
+                .child(view().flex_row().gap_2()
+                    .child(action("Read remote", move || clipboard_read.send(Command::ClipboardGet)))
+                    .child(action("Write remote", move || clipboard_write.send(Command::ClipboardSet(clipboard_draft.get_untracked()))))
+                    .child(action("Paste local", move || {
+                        let client = clipboard_paste.clone();
+                        spawn(async move {
+                            let value = clipboard_string().await;
+                            match validate_clipboard_text(&value) {
+                                Ok(()) => clipboard_draft.set(value),
+                                Err(error) => client.report(&error.to_string()),
+                            }
+                        });
+                    }))
+                    .child(action("Copy editor locally", move || {
+                        let value = clipboard_draft.get_untracked();
+                        match validate_clipboard_text(&value) {
+                            Ok(()) => set_clipboard(value),
+                            Err(error) => clipboard_copy.report(&error.to_string()),
+                        }
                     })))
                 .child(heading("Shell"))
                 .child(text("NSH VT terminal · click to type · scrollback 1000 lines").text_sm())

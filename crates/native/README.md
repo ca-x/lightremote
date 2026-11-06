@@ -76,8 +76,24 @@ Held buttons/keys are explicitly released before FIN, with a two-second cleanup
 bound. If the transport fails, the host's stream teardown releases its held input.
 The 128-slot input queue pauses control on overflow; clicking refocuses it.
 OS-reserved shortcuts (for example Ctrl+Alt+Delete) remain subject to local OS
-security rules. IME text can use the explicit text field. Clipboard is not yet
-implemented.
+security rules. IME text can use the explicit text field.
+
+Clipboard provides a bounded multiline text editor and explicit Read remote /
+Write remote controls, using `clipboard.get` / `clipboard.set` on the existing
+control stream. Host permission failures are shown unchanged. Text is limited to
+256 KiB of UTF-8 with no NUL, and writes must also fit the control frame after
+JSON escaping. Reading replaces the editor only on success; a failed read leaves
+its previous contents intact. Disconnect clears remote clipboard data from the
+editor. Empty text is allowed, so Write remote can explicitly clear it.
+
+Paste local explicitly reads the OS clipboard through NSH's `clipboard_string`
+into the editor; Copy editor locally calls NSH's `set_clipboard`. Neither action
+contacts the host. Read remote does not alter the local OS clipboard, and Write
+remote sends only the editor text. No clipboard data is read on connection, no
+periodic reads or synchronization run, and there are no image/file clipboard
+transfers. NSH returns empty text when the local clipboard has none; its local
+clipboard setters have no completion/error receipt, so the UI does not claim a
+verified OS clipboard write.
 
 Shell uses NSH's native `Terminal`/VT emulator, keyboard events, 1000 lines of
 scrollback, and `shell.resize` synchronization with its actual cell dimensions.

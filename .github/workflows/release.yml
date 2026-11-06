@@ -107,13 +107,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          cat > release-notes.md <<'NOTES'
-          These artifacts are unsigned. Windows executables have no Authenticode publisher signature; macOS executables are not Developer ID signed or notarized. SHA256SUMS detects changed downloads but does not authenticate the publisher. No detached signatures are provided. Any toolchain ad-hoc signature is not a publisher signature.
-
-          Each platform has separate desktop CLI, headless CLI, native NSH controller, and relay archives. Linux GNU builds require a compatible glibc; desktop and native builds also need system libraries documented in docs/distribution.md. The web archive contains the compiled browser client.
-
-          The relay image supports linux/amd64 and linux/arm64. Cloudflare deployment is a separate operator action; no Worker is deployed by this workflow.
-          NOTES
+          cp "docs/releases/${RELEASE_TAG}.md" release-notes.md
           image="ghcr.io/${GH_REPO,,}-relay"
           image_version="${RELEASE_TAG#v}"
           image_version="${image_version//+/_}"

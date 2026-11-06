@@ -1,10 +1,62 @@
 # Focused implementation review
 
-Date: 2026-11-07. Status: three P1 findings fixed and independently verified for the recorded checkpoint; no remaining P0/P1 established within this review scope. All findings were sent immediately to the implementation lead. This report owns only this file, not `docs/review.md`.
+Date: 2026-11-07. Status: FROZEN after the scoped C7/C8 and native follow-up. No open P0/P1 remains in the reviewed scope. I1–I3 remain closed; the native JPEG P1 and C7/C8 follow-up are closed with the evidence below. All findings were sent immediately to the implementation lead. This report owns only this file, not `docs/review.md`.
 
-Scope: the first staged snapshot in `/tmp/lightremote-services-relays-clients-review.patch`, current services, Rust/Cloudflare relays, and browser sources, against `docs/design.md` and the existing reviewer ledger. Application components, Rust edition 2024/MSRV 1.88. Native implementation and detailed core/CLI review are assigned separately. The v0.1 bearer-PSK threat model, absence of durable device identity/PFS, and one reliable ordered carrier are accepted scope decisions.
+Scope: the first staged snapshot in `/tmp/lightremote-services-relays-clients-review.patch`, current services, Rust/Cloudflare relays, and browser sources, against `docs/design.md` and the existing reviewer ledger. Application components, Rust edition 2024/MSRV 1.88. Detailed core/CLI review remains assigned separately. The continuation explicitly adds the services adapter/FIN behavior and the native input surface/JPEG admission paths; it does not expand into a global core review. The v0.1 bearer-PSK threat model, absence of durable device identity/PFS, and one reliable ordered carrier are accepted scope decisions.
 
-## Findings
+## Scoped continuation: frozen sign-off
+
+The earlier I1–I3 findings below remain closed. This continuation covers C7/C8 at the service boundary and the explicitly assigned native input surface. **No open P0/P1 was established in this final scope.**
+
+### C7 — Closed: preserve RESET versus authenticated request FIN through service dispatch
+
+Locations: `crates/services/src/lib.rs:30` and `:177` (`ServiceIo` and `HostServices::serve`), `crates/services/src/files.rs:151` (`Files::put`), `crates/cli/src/lib.rs:10` (`serve_stream`), and `crates/cli/src/main.rs:161` (production dispatch).
+
+The service accepts and boxes the entire error-aware stream, rather than extracting its raw duplex field. `expect_fin` runs before the no-overwrite hard-link commit. The adapter retains the independent cancellation observer and reports actual service completion; it does not wait for full bidirectional completion before committing and sending the receipt. The core wrapper was followed only far enough to check this boundary; its detailed review remains with the core reviewer.
+
+Independent execution: the real encrypted `reset_after_exact_size_without_fin_never_commits_upload` integration passed first against the generic adapter checkpoint (0.19 seconds), then against the production `serve_stream` helper (0.33 seconds). Zero-byte and 128 KiB exact-size uploads receive RESET without FIN, return service errors, and leave neither destination nor staging files. A valid FIN upload then succeeds with a receipt on the same encrypted connection.
+
+### C8 — Closed: normal input FIN drains output; later RESET cancels the silent child
+
+Locations: `crates/services/src/shell.rs:111` (input/output lifetime), `:321` (`finish_canonical_input`), `crates/services/src/shell/unix.rs:35` (slave input-queue probe) and `:57` (canonical EOF bytes), plus `crates/cli/src/lib.rs:19` (independent cancellation select).
+
+Normal request FIN now drops the input sender after accepted bytes are queued, keeps the output/child path alive under a fixed drain deadline, and distinguishes stream errors from normal EOF. The Unix writer drains its bounded input queue and waits for the slave input queue/canonical mode before sending two EOF characters. It injects no newline, preserving a final partial input line. Raw-mode applications remain subject to the drain deadline.
+
+The review also identified a cancellation gap after genuine FIN: a silent PTY child offered no subsequent service read/write on which to observe RESET. The production adapter now selects service work against `StreamCancellation::cancelled()` independently of application I/O. RESET therefore drops the service future and triggers PTY teardown even after input has closed. This is part of closing C8, not a reopening of I1–I3.
+
+Independent focused results in fresh read-only, isolated sandboxes:
+
+| Check | Result |
+| --- | --- |
+| Encrypted production integration: actual shell PID, FIN keeps worker alive, subsequent RESET returns error and child disappears within the two-second bound | Passed as part of `reset_after_exact_size_without_fin_never_commits_upload`, 0.33 s |
+| `normal_shell_fin_drains_queued_commands_output_and_exit_status` | Passed, 0.11 s; delayed output preserved and exit code 7 observed |
+| `canonical_shell_input_fin_delivers_eof_after_queued_input` | Passed, 0.65 s; exact 65,554 bytes including a partial final line, no injected byte |
+| `shell_fin_output_drain_has_deadline_even_with_continuous_output` | Passed, 0.52 s; deadline returns failure and terminates the child |
+
+The production integration was executed from `target/debug/deps/reset_upload-06c0c01a93591ddb`. The three PTY cases used the frozen `/tmp/lightremote-services-check/target/debug/deps/services-f9c8ce7707fa1bcd`, with the named filter and `--test-threads=1 --nocapture`. These are independent targeted runs, not a rerun of the full service suite.
+
+### N1 — P1, closed: bound JPEG pixels before native decoding
+
+Locations: `crates/native/src/desktop.rs:11` (`admit_jpeg`), `crates/native/src/client.rs:514` (before frame publication), and `crates/native/src/surface/linux.rs:166`, `surface/macos.rs:237`, `surface/windows.rs:110` (before platform decode).
+
+The previous native path checked encoded record size and JPEG magic but had no shared decoded-pixel admission limit. A peer could bypass the host implementation's capture cap. The actual Linux GDK decoder accepted a 199,362-byte JPEG whose SOF advertised 16,384 × 16,384 pixels. In an isolated headless check, peak RSS rose from 30,896 KiB to 819,016 KiB (**769.65 MiB increase**), with a successful texture result and no GError. This establishes a concrete remote-input resource amplification path; it makes no physical display claim.
+
+Resolution: shared header-only `ImageReader::into_dimensions()` admission enforces encoded size ≤8 MiB, each edge ≤16,384, positive dimensions, and total pixels ≤16,777,216 independently of display metadata. Source inspection confirms admission before publication and before all three platform decoders. Header admission does not allocate the pixel raster. The existing JPEG dependency was moved to common native dependencies.
+
+Independent execution of the frozen native binary `target/debug/deps/lightremote_native-3f2f36191060d89a`:
+
+- `desktop::tests::jpeg_admission`: **2 passed**, 0 failed, 0.01 s. Covers a tiny encoded JPEG patched to 16,384², the pixel boundary, excessive edge, zero dimensions, malformed input and oversized encoded records.
+- `input::tests::encrypted_input_blur_releases_keys_and_buttons_before_fin --exact`: **1 passed**, 0 failed, 0.10 s. Real encrypted endpoints verify selected-display metadata and explicit held-key/button release before FIN.
+
+All entries in the native owner's `/tmp/lightremote-native-review-checkpoint.sha256` matched current source. The input surface's queue/epoch release and coordinate mapping were also source-reviewed; no additional concrete P0/P1 was established. macOS/Windows decoder call sites were inspected, not executed on those operating systems. No physical input/capture or native-window interaction pass is claimed.
+
+### Freeze boundary and verification provenance
+
+The user reports `scripts/check.sh` completed with exit 0, logged in `/tmp/lightremote-final-checks-3.log`. That full command was not independently rerun. Independent evidence here is limited to the explicitly listed focused tests and source inspection. No existing passing npm suite was rerun, no subagent or commit was created, and this reviewer changed only `docs/implementation-review.md`. `docs/review.md` remains owned by its reviewer.
+
+The initial checkpoint's exclusion of later ServiceIo/normal-FIN/native work is superseded only by this explicit follow-up. This frozen sign-off is for these paths and hashes; it does not assert physical-device validation, macOS/Windows runtime validation, live Cloudflare deployment, signing, or a global core/release audit.
+
+## Initial checkpoint findings (I1–I3 remain closed)
 
 ### I1 — P1, fixed and independently verified: browser accepts final async processing as success after cancellation
 
@@ -74,3 +126,31 @@ Source changed concurrently. The following SHA-256 values record source snapshot
 | `web/src/secure.ts` | `66084681d8147db9c9f36b0f9c77eb8c2bad5e706c08d5a260eeb5aa3b2c6b99` |
 | `/tmp/lightremote-services-check/target/debug/deps/services-f9c8ce7707fa1bcd` | `76fbefea9103c6cb77596b52539cb0bbdf3d5b52a2b38702c58a7e7c862f669f` |
 | `/tmp/lightremote-services-check/target/debug/deps/lightremote_services-6e6b7ee707ec69a5` | `b8d1defc041230d4f53f870d2ccfa138d81b7dd297fbee568a33d9127f525f6f` |
+
+## Final scoped checkpoint hashes
+
+The following were captured at freeze. Earlier tables retain their historical hashes.
+
+| File / executed artifact | SHA-256 |
+| --- | --- |
+| `docs/design.md` | `0e0a8a017e297692fc9fbfc1a757cf7d5619db9a492ef574c6c6cd1871932997` |
+| `crates/cli/src/lib.rs` | `742e8c43e65b89bfb3bb13cdc8dc0f8cae581f3cac09b2bcdb0c2a930574f3ac` |
+| `crates/cli/src/main.rs` | `7bc99c599e592eecd3361e384c1d2c9c30056c35a49866a07343d48ab028e84f` |
+| `crates/cli/tests/reset_upload.rs` | `e733ae7e4c53a79d1157fef09f6a4990001d137ef80ee216532af73c69d6cddd` |
+| `crates/services/src/lib.rs` | `ecf3e2d3f555a793bb475c74cc6156738acce78f1885f269ae06ebe2fcddbf10` |
+| `crates/services/src/files.rs` | `53abab9795e5c1b278a00175a0d960808b228af4a902af4926d279b64b03e4aa` |
+| `crates/services/src/shell.rs` | `07349ff3cb6e4ec5da00acb8ef5df6bc8c25ee65560a60ca7c9e9071477cc574` |
+| `crates/services/src/shell/unix.rs` | `4b4ea365a737c9e1500023119139ec0784740e3f1ba3c177310cebd6adfcbd5d` |
+| `crates/services/src/shell/reap.rs` | `486c634e66b16c5ce00c032d1e3268aaeb6bb1cbeab60bcca4fea0246a875774` |
+| `crates/services/tests/services.rs` | `5eb33e87eef15af7f975e93ab3ad13114ebf957abd67d49e4f4af1f49ecabf4c` |
+| `crates/native/Cargo.toml` | `ca91c04c752d86f67f150b7767af20a6dbd4893f531bdf7ff6bdd0dd6d79e96f` |
+| `crates/native/src/client.rs` | `fa36f83677dc72a6fd442b0db26fdb7b8837624ab89e1451fc3a7139b600b794` |
+| `crates/native/src/input.rs` | `05b3b223cae15dee78dfaf76f642446f2de6c9a1cb0ddd1ddc4108298dc0a6bc` |
+| `crates/native/src/desktop.rs` | `150baf5911b03fd903a1beaa0ff597bac5a7b070437e9d2a0f8e40cd21bf179a` |
+| `crates/native/src/ui.rs` | `32597f2f9dc3d9e9d23bfd97e559a9d9856d1f6e16c753d55d230f66ee55ba03` |
+| `crates/native/src/surface/linux.rs` | `0a3999e77575c7136cd1e95afa0cc05be24d6b251e46d8663887f30aa06424ee` |
+| `crates/native/src/surface/macos.rs` | `edd58c7956e5566fc30b9ff7f4e5866428845d6960361368e601eedb363a6723` |
+| `crates/native/src/surface/windows.rs` | `2297f84ae3bbe34260087c01fa5920fcc41c4adb3af40e5c2016bd9e6aa81c34` |
+| `target/debug/deps/reset_upload-06c0c01a93591ddb` | `7d4b5f9f7db09a41e1ef74d31fd8e6159bd0a792889a2f9db7df235c10fe446e` |
+| `target/debug/deps/lightremote_native-3f2f36191060d89a` | `87ed20ae30eb9084ddcc29894a713eb49719b2e8d4e893b79e399b003bdfa482` |
+| `/tmp/lightremote-services-check/target/debug/deps/services-f9c8ce7707fa1bcd` | `b76dfcab25a63c9da56d704da71e8de2b5199b80ee47615be2fa1cbb1d3bc393` |

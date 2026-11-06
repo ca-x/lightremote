@@ -17,7 +17,8 @@ OS sessions, signing, and external deployment are independent claims.
 - Shared relay contract passed against both Rust and local Workers runtime;
   tiny-window encrypted roundtrip passed ten consecutive runs. Exact relay
   commands and source checkpoint hashes are in `deploy/README.md`.
-- NSH Linux native controller: build, check, Clippy and 14 tests passed. JPEG
+- NSH Linux native controller: build, check, Clippy and 16 tests passed, including
+  encrypted clipboard request/error handling added after the scoped review. JPEG
   dimensions are admitted before allocation on each supported platform.
 - Python packaging fixtures verified ZIP/TAR contents, documentation/license
   inclusion, and executable modes. Workflow actionlint/ShellCheck passed.
@@ -27,10 +28,11 @@ Independent architecture and implementation reviews are in `review.md` and
 
 ## Hosted build and release evidence
 
-Pending the initial public source push. CI run identifiers and release assets
-will be recorded after the hosted jobs complete. Docker image build/health/static
-client smoke, Windows/macOS native builds, and Linux arm64 builds have not yet
-been established by local verification.
+Initial public source: `49ef5ea`. Hosted CI run `42284398244` confirmed Rust
+checks and Cloudflare checks passed. Full platform and release verification
+remains in progress. Docker image build/health/static client smoke, Windows/macOS
+native builds, and Linux arm64 builds have not yet been established by local
+verification. Final hosted run identifiers will be recorded after completion.
 
 ## Runtime and deployment limits
 

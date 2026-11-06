@@ -59,8 +59,11 @@ jobs:
       - run: npm ci
         working-directory: web
       - run: bash scripts/check.sh web
-      - name: Install Chromium for browser acceptance
-        run: npx playwright install --with-deps chromium
+      - name: Ensure Chromium for browser acceptance
+        run: |
+          if [[ ! -x /opt/google/chrome/chrome && ! -x /usr/bin/chromium ]]; then
+            npx playwright install --with-deps chromium
+          fi
         working-directory: web
       - run: npm run test:browser
         working-directory: web
@@ -116,7 +119,11 @@ jobs:
       - run: chmod +x e2e-bin/*
       - run: npm ci
         working-directory: web
-      - run: npx playwright install --with-deps chromium
+      - name: Ensure Chromium for Rust acceptance
+        run: |
+          if [[ ! -x /opt/google/chrome/chrome && ! -x /usr/bin/chromium ]]; then
+            npx playwright install --with-deps chromium
+          fi
         working-directory: web
       - name: Real Chromium to Rust host
         working-directory: web

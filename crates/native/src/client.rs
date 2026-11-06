@@ -20,6 +20,7 @@ use tokio::{
 const TIMEOUT: Duration = Duration::from_secs(25);
 const MAX_TEXT: usize = 128 * 1024;
 const MAX_FILE: u64 = 512 * 1024 * 1024;
+pub const MAX_CLIPBOARD_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Default, PartialEq)]
 pub struct State {
@@ -28,6 +29,8 @@ pub struct State {
     pub error: String,
     pub capabilities: String,
     pub listing: String,
+    pub clipboard: String,
+    pub clipboard_revision: u64,
     pub terminal: String,
     pub terminal_total: u64,
     pub terminal_epoch: u64,
@@ -55,6 +58,8 @@ pub enum Command {
     Upload { remote: String, local: PathBuf },
     Text(String),
     SaveScreenshot(PathBuf),
+    ClipboardGet,
+    ClipboardSet(String),
 }
 
 #[derive(Clone)]
@@ -412,6 +417,14 @@ async fn run(mut commands: mpsc::Receiver<Command>, state: watch::Sender<State>,
                                 error(&state, "Open a shell first, or wait for its input queue to drain.");
                             }
                         }
+                        Command::ClipboardGet => {
+                            let control = control.clone(); let state = state.clone();
+                            workers.spawn(async move { read_remote_clipboard(control, state).await });
+                        }
+                        Command::ClipboardSet(text) => {
+                            let control = control.clone(); let state = state.clone();
+                            workers.spawn(async move { write_remote_clipboard(control, state, text).await });
+                        }
                         Command::List(path) => {
                             let control = control.clone(); let state = state.clone();
                             workers.spawn(async move {
@@ -469,6 +482,8 @@ async fn run(mut commands: mpsc::Receiver<Command>, state: watch::Sender<State>,
             s.display = None;
             s.capabilities.clear();
             s.listing.clear();
+            s.clipboard.clear();
+            s.clipboard_revision += 1;
             s.terminal.clear();
             s.terminal_total = 0;
             s.shell_id = None;
@@ -476,6 +491,56 @@ async fn run(mut commands: mpsc::Receiver<Command>, state: watch::Sender<State>,
             s.status = "Disconnected".into();
         });
     }
+}
+
+/// Match the host's text limit and reject writes that would exceed the control
+/// frame after JSON escaping, before they can break the shared control stream.
+pub fn validate_clipboard_text(text: &str) -> Result<()> {
+    ensure!(
+        text.len() <= MAX_CLIPBOARD_BYTES,
+        "Clipboard text exceeds 256 KiB"
+    );
+    ensure!(!text.contains('\0'), "Clipboard text cannot contain NUL");
+    let request = json!({"id":u64::MAX,"method":"clipboard.set","params":{"text":text}});
+    ensure!(
+        serde_json::to_vec(&request)?.len() <= records::MAX_CONTROL,
+        "Clipboard text exceeds the control limit after JSON encoding"
+    );
+    Ok(())
+}
+
+fn clipboard_text(response: &Value) -> Result<String> {
+    let text = response["text"]
+        .as_str()
+        .context("Host clipboard response omitted text")?;
+    validate_clipboard_text(text)?;
+    Ok(text.to_owned())
+}
+
+async fn read_remote_clipboard(control: Control, state: watch::Sender<State>) -> Result<()> {
+    let response = control.call("clipboard.get", json!({})).await?;
+    let text = clipboard_text(&response)?;
+    state.send_modify(|s| {
+        s.clipboard = text;
+        s.clipboard_revision += 1;
+        s.status = "Remote clipboard loaded into editor".into();
+    });
+    Ok(())
+}
+
+async fn write_remote_clipboard(
+    control: Control,
+    state: watch::Sender<State>,
+    text: String,
+) -> Result<()> {
+    validate_clipboard_text(&text)?;
+    let response = control.call("clipboard.set", json!({"text":text})).await?;
+    ensure!(
+        response.is_object(),
+        "Invalid host clipboard write response"
+    );
+    state.send_modify(|s| s.status = "Remote clipboard written".into());
+    Ok(())
 }
 
 fn pretty(value: &Value) -> String {
@@ -738,6 +803,75 @@ fn validate_upload_receipt(receipt: &Value, size: u64, checksum: &str) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn clipboard_bounds_cover_utf8_nul_and_json_expansion() {
+        assert!(validate_clipboard_text("").is_ok());
+        assert!(validate_clipboard_text(&"x".repeat(MAX_CLIPBOARD_BYTES)).is_ok());
+        assert!(validate_clipboard_text(&"你".repeat(MAX_CLIPBOARD_BYTES / 3 + 1)).is_err());
+        assert!(validate_clipboard_text("a\0b").is_err());
+        assert!(validate_clipboard_text(&"\x01".repeat(MAX_CLIPBOARD_BYTES)).is_err());
+        assert!(clipboard_text(&json!({"text":3})).is_err());
+        assert!(clipboard_text(&json!({})).is_err());
+        assert_eq!(clipboard_text(&json!({"text":""})).unwrap(), "");
+    }
+
+    #[tokio::test]
+    async fn explicit_clipboard_requests_preserve_permission_errors_and_editor() {
+        let (local, mut peer) = tokio::io::duplex(4096);
+        let (tx, rx) = mpsc::channel(4);
+        let control = Control(tx);
+        let (state, _) = watch::channel(State::default());
+        let runtime = tokio::spawn(control_loop(local, rx, state.clone()));
+        let service = tokio::spawn(async move {
+            for (method, params, result) in [
+                (
+                    "clipboard.get",
+                    json!({}),
+                    json!({"result":{"text":"远程\nclip"}}),
+                ),
+                (
+                    "clipboard.set",
+                    json!({"text":"edited"}),
+                    json!({"result":{}}),
+                ),
+                (
+                    "clipboard.get",
+                    json!({}),
+                    json!({"error":{"code":"permission_denied","message":"Clipboard disabled"}}),
+                ),
+            ] {
+                let request = records::read(&mut peer, records::MAX_CONTROL)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let request: Value = serde_json::from_slice(&request).unwrap();
+                assert_eq!(request["method"], method);
+                assert_eq!(request["params"], params);
+                let mut response = result;
+                response["id"] = request["id"].clone();
+                records::json(&mut peer, &response).await.unwrap();
+            }
+        });
+        read_remote_clipboard(control.clone(), state.clone())
+            .await
+            .unwrap();
+        assert_eq!(state.borrow().clipboard, "远程\nclip");
+        assert_eq!(state.borrow().clipboard_revision, 1);
+        write_remote_clipboard(control.clone(), state.clone(), "edited".into())
+            .await
+            .unwrap();
+        assert_eq!(state.borrow().status, "Remote clipboard written");
+        let failure = read_remote_clipboard(control, state.clone())
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(failure.contains("permission_denied: Clipboard disabled"));
+        assert_eq!(state.borrow().clipboard, "远程\nclip");
+        assert_eq!(state.borrow().clipboard_revision, 1);
+        service.await.unwrap();
+        runtime.abort();
+    }
+
     #[tokio::test]
     async fn screenshot_export_is_exact_and_never_overwrites() {
         let directory = tempfile::tempdir().unwrap();
