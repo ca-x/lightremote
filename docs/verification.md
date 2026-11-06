@@ -28,11 +28,29 @@ Independent architecture and implementation reviews are in `review.md` and
 
 ## Hosted build and release evidence
 
-Initial public source: `49ef5ea`. Hosted CI run `42284398244` confirmed Rust
-checks and Cloudflare checks passed. Full platform and release verification
-remains in progress. Docker image build/health/static client smoke, Windows/macOS
-native builds, and Linux arm64 builds have not yet been established by local
-verification. Final hosted run identifiers will be recorded after completion.
+Source checkpoint `3d0aa0b`, hosted CI run `42285530612`: **completed, success**
+(all ten jobs).
+
+- Rust headless/default format, lint, tests and CLI PTY/files acceptance passed.
+- Web typecheck, 34 unit tests, production bundle and five Chromium tests passed.
+- Cloudflare typecheck and 10 workerd tests passed.
+- Docker image build, container health and static Web client smoke passed.
+- Actual Chromium → Rust relay → encrypted Rust host passed PTY output, resize,
+  upload/download and truthful headless desktop rejection. The identical external
+  relay contract passed against Rust and local Workers, including timer-driven
+  idle expiry and one-time-ticket consumption.
+- Linux x64/arm64, Windows x64 and macOS arm64 each built and packaged desktop
+  CLI, headless CLI, native NSH controller and relay; macOS x64 also completed
+  all four products successfully.
+- Downloaded Linux x64/arm64 archives were inspected for actual ELF architecture,
+  licenses/documentation and executable modes. The packaged Linux x64 headless
+  and relay executables passed the same PTY and 2 MiB file acceptance script;
+  `ldd` showed only libc, libm, libgcc and the loader, without GUI libraries.
+
+The tag workflow rechecks the tagged source, assembles the complete per-platform
+archive set and generates SHA256SUMS before creating the GitHub Release. Its GHCR
+job builds both Linux architectures; image visibility is distinct from repository
+visibility and must be checked separately. See `distribution.md`.
 
 ## Runtime and deployment limits
 

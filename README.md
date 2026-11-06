@@ -13,6 +13,16 @@ in [CAPABILITIES.md](CAPABILITIES.md). The application profiles are defined in
 
 ![LightRemote Web controller](docs/screenshots/web-desktop.png)
 
+## Downloads
+
+Get compiled archives from [GitHub Releases](https://github.com/lib-x/lightremote/releases).
+Choose `lightremote-native` for the NSH controller, `lightremote` for the desktop
+host/CLI, `lightremote-headless` for a shell/files host without GUI dependencies,
+or `lightremote-relay` for a self-hosted relay. `lightremote-web` contains static
+browser assets. Platform and architecture appear in every binary archive name.
+The desktop CLI and headless CLI both contain an executable named `lightremote`;
+extract them into separate directories.
+
 ## Run a local session
 
 Build with a current stable Rust toolchain and Node 22 or later:

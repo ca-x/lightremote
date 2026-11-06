@@ -2,6 +2,11 @@
 
 ## Latest decision
 
+Post-freeze execution evidence: hosted CI run `42285530612` completed successfully
+for source `3d0aa0b`, including all five platform builds, Docker smoke and real
+browser/Rust/Workers integration. This evidence does not broaden the scoped
+source-review sign-off below.
+
 **Scoped final review: PASS for C2, C3, C4, C7 and C11. These five findings are closed for the exact source checkpoint below. No unresolved P0/P1 was found in these reviewed paths.**
 
 **Local final validation: PASS for `bash scripts/check.sh`. Exit 0 is reported by the implementation lead; the final output log was inspected by this reviewer. Hosted CI is [in progress](https://github.com/lib-x/lightremote/actions/runs/42284398244) for published commit `49ef5ea` (status checked through GitHub Actions).**

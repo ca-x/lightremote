@@ -9,6 +9,12 @@
 
 ![Web 工作台](docs/screenshots/web-desktop.png)
 
+从 [GitHub Releases](https://github.com/lib-x/lightremote/releases) 下载编译后的包：
+`lightremote-native` 是 NSH 原生控制端，`lightremote` 是桌面主机与 CLI，
+`lightremote-headless` 是不依赖 GUI 的 Shell/文件主机，`lightremote-relay` 是中继，
+`lightremote-web` 是 Web 静态资源；二进制包名包含系统和架构。
+桌面 CLI 和 headless CLI 内的程序都叫 `lightremote`，请解压到不同目录。
+
 本地启动：
 
 ```sh
