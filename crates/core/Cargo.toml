@@ -1,0 +1,26 @@
+[package]
+name = "lightremote-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1"
+aes-gcm = "0.10"
+base64 = "0.22"
+futures-util = { version = "0.3", features = ["sink"] }
+hkdf = "0.12"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
+tunnel-mux = "=0.1.0"
+url = "2"
+zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+lightremote-relay = { path = "../relay" }
+axum = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json"] }

@@ -1,0 +1,33 @@
+{
+  "name": "lightremote-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:browser": "playwright test",
+    "preview": "vite preview --host 127.0.0.1",
+    "verify:sdk": "node scripts/verify-sdk.mjs",
+    "test:rust": "tsx scripts/rust-smoke.ts"
+  },
+  "dependencies": {
+    "@lib-x/tmp": "https://github.com/lib-x/tm/releases/download/sdk%2Fnode%2Fv0.1.0/tunnel-mux-node-0.1.0.tgz",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@types/node": "^24.10.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.2",
+    "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

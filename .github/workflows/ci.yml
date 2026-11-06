@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust format, lint, and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libgbm-dev libwayland-dev libegl-dev pkg-config
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      - run: bash scripts/check.sh rust
+      - name: Build real headless integration binaries
+        run: cargo build --locked --no-default-features -p lightremote -p lightremote-relay
+      - name: Verify CLI PTY and file session
+        run: python3 scripts/e2e-cli.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-binaries
+          path: |
+            target/debug/lightremote
+            target/debug/lightremote-relay
+          if-no-files-found: error
+          retention-days: 3
+
+  web:
+    name: Web checks and build artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: bash scripts/check.sh web
+      - name: Install Chromium for browser acceptance
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: npm run test:browser
+        working-directory: web
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-dist
+          path: web/dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  cloudflare:
+    name: Cloudflare typecheck and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cloudflare/package-lock.json
+      - run: npm ci
+        working-directory: cloudflare
+      - run: bash scripts/check.sh cloudflare
+
+  binaries:
+    name: Platform binaries
+    needs: web
+    uses: ./.github/workflows/build-binaries.yml
+
+  integration:
+    name: Real browser and relay conformance
+    needs: [rust, web, cloudflare]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: e2e-binaries
+          path: e2e-bin
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: web-dist
+          path: web/dist
+      - run: chmod +x e2e-bin/*
+      - run: npm ci
+        working-directory: web
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - name: Real Chromium to Rust host
+        working-directory: web
+        env:
+          LIGHTREMOTE_BIN: ${{ github.workspace }}/e2e-bin/lightremote
+          LIGHTREMOTE_RELAY_BIN: ${{ github.workspace }}/e2e-bin/lightremote-relay
+        run: npm run test:rust
+      - run: npm ci
+        working-directory: cloudflare
+      - name: Identical external relay contract on Rust and Workers
+        run: bash deploy/test-relay-pair.sh ./e2e-bin/lightremote-relay
+
+  docker:
+    name: Build relay container
+    needs: web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: web-dist
+          path: web/dist
+      - name: Build Docker relay
+        run: docker build -f deploy/Dockerfile -t lightremote-relay:ci .
+      - name: Smoke container health and static client
+        run: |
+          docker run -d --name relay-ci -e LIGHTREMOTE_RELAY_TOKEN=ci-only-container-token -p 127.0.0.1:8787:8787 lightremote-relay:ci
+          trap 'docker logs relay-ci; docker rm -f relay-ci' EXIT
+          for _ in {1..50}; do
+            if curl --fail --silent http://127.0.0.1:8787/healthz; then break; fi
+            sleep 0.2
+          done
+          curl --fail --silent http://127.0.0.1:8787/healthz
+          curl --fail --silent http://127.0.0.1:8787/ -o /tmp/lightremote-client.html
+          test -s /tmp/lightremote-client.html

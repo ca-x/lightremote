@@ -1,0 +1,124 @@
+name: Release unsigned binaries and relay image
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Require a version tag matching the workspace
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/release.py validate-tag "$RELEASE_TAG"
+
+  checks:
+    needs: validate-tag
+    uses: ./.github/workflows/ci.yml
+
+  relay-image:
+    name: Publish multiarch relay to GHCR
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: web-dist
+          path: web/dist
+      - name: Resolve lowercase image name
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "name=ghcr.io/${REPOSITORY,,}-relay" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        id: metadata
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+          flavor: latest=auto
+      - name: Build and push relay with web artifact
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+
+  publish:
+    name: Publish GitHub release
+    needs: [checks, relay-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: web-dist
+          path: web/dist
+      - name: Package web and generate complete checksums
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 scripts/release.py web --version "$RELEASE_TAG" --web-dir web/dist --output dist
+          python3 scripts/release.py checksums --directory dist --version "$RELEASE_TAG"
+      - name: Publish unsigned release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          These artifacts are unsigned. Windows executables have no Authenticode publisher signature; macOS executables are not Developer ID signed or notarized. SHA256SUMS detects changed downloads but does not authenticate the publisher. No detached signatures are provided. Any toolchain ad-hoc signature is not a publisher signature.
+
+          Each platform has separate desktop CLI, headless CLI, native NSH controller, and relay archives. Linux GNU builds require a compatible glibc; desktop and native builds also need system libraries documented in docs/distribution.md. The web archive contains the compiled browser client.
+
+          The relay image supports linux/amd64 and linux/arm64. Cloudflare deployment is a separate operator action; no Worker is deployed by this workflow.
+          NOTES
+          image="ghcr.io/${GH_REPO,,}-relay"
+          image_version="${RELEASE_TAG#v}"
+          image_version="${image_version//+/_}"
+          printf '\nRelay image: %s:%s.\n' "$image" "$image_version" >> release-notes.md
+          args=()
+          version="${RELEASE_TAG%%+*}"
+          if [[ "$version" == *-* ]]; then args+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG (unsigned)" --notes-file release-notes.md "${args[@]}" dist/*

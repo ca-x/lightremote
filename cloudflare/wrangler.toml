@@ -1,0 +1,20 @@
+name = "lightremote-relay"
+main = "src/index.ts"
+compatibility_date = "2025-10-01"
+
+[vars]
+LIGHTREMOTE_MAX_ROOMS = "128"
+LIGHTREMOTE_ROOM_TTL_SECONDS = "3600"
+LIGHTREMOTE_WAIT_SECONDS = "30"
+LIGHTREMOTE_SESSION_BYTES = "67108864"
+# LIGHTREMOTE_ALLOWED_ORIGINS = "https://remote.example.com"
+# LIGHTREMOTE_PUBLIC_ORIGIN = "https://relay.example.com"
+# Mandatory secret: wrangler secret put LIGHTREMOTE_RELAY_TOKEN
+
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "RelayRooms"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayRooms"]

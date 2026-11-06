@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/services", "crates/relay", "crates/cli", "crates/native"]
+default-members = ["crates/core", "crates/services", "crates/relay", "crates/cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/lib-x/lightremote"
+rust-version = "1.88"
+
+[profile.release]
+lto = "thin"
+strip = true

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "room_id": "vector-room",
+  "sender": "client",
+  "secret_b64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "client_nonce_b64url": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+  "host_nonce_b64url": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8",
+  "counter": 0,
+  "plaintext_utf8": "lightremote/vector/v1",
+  "info_utf8": "lightremote/v1/vector-room/client",
+  "aad_utf8": "lightremote/v1/vector-room/client",
+  "record_b64url": "AAAAAAAAAAAXKGiAGknDSQd2KUrwNrbZZh7WueMXhbmqgSFwpL5zc3ZqUQ3v"
+}

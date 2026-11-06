@@ -1,0 +1,38 @@
+# LightRemote capability map
+
+| Module | Responsibility | Depends on |
+| --- | --- | --- |
+| app-contract | Versioned profiles, bounded application records, capabilities and explicit errors | TMP v1 |
+| secure-link | Authenticated encrypted records over byte carriers, single-owner TMP driver | app-contract |
+| relay | Room tickets, bounded opaque WebSocket forwarding; Rust/Docker and Cloudflare DO | secure-link carrier contract |
+| host-services | Desktop/input, PTY, sandboxed files, clipboard, screenshots/events | app-contract, secure-link |
+| web-client | Browser connection, desktop, terminal, files, clipboard | app-contract, secure-link |
+| native-client | NSH native UI backed by Rust networking and services | app-contract, secure-link |
+| distribution | Reproducible builds, public repository, platform artifacts and relay container | all modules |
+
+Build order: app-contract → secure-link, relay → host-services, web-client → native-client → distribution and end-to-end acceptance.
+
+The owner delegated architecture evaluation to independent agents. Review results and resulting changes are recorded in docs/review.md; no additional human design gate is introduced.
+
+## Platform evidence (2026-11-07)
+
+`Pending` means no successful evidence recorded yet. CI build success and physical
+runtime verification are different checks. Initial desktop/native artifacts are
+experimental until a real OS session is tested.
+
+| Target | Backend / capability | Local build | Automated functionality | Physical desktop | Signing |
+| --- | --- | --- | --- | --- | --- |
+| Linux x64 headless | portable-pty; cap-std files | Build passed | 43 tests + PTY/files encrypted E2E passed | N/A | Unsigned |
+| Linux x64 host desktop | xcap; enigo X11; arboard | Build/check passed | Desktop unit/service tests passed; live test skipped | Not verified | Unsigned |
+| Linux Wayland | Partial upstream capture; no complete native injection path | Experimental | Not verified | Not verified | Unsigned |
+| Linux x64 NSH | Native Rust UI / GTK4 + native input surfaces | Build passed | 14 tests passed | Not verified | Unsigned |
+| Linux arm64 | Host, relay, headless, NSH / CI runner | Pending CI | Pending CI | Not verified | Unsigned |
+| Windows x64 | xcap, enigo, portable-pty / NSH | Pending CI | Pending CI | Not verified; UAC/session0 unsupported | Unsigned |
+| macOS x64/arm64 | xcap, enigo, PTY / NSH AppKit | Pending CI | Pending CI | Not verified; permissions required | Unsigned, not notarized |
+| Web | WebCrypto, released TMP JS core, canvas, xterm | Build passed | 34 unit + 5 Chromium + real Rust PTY/files E2E passed | Physical capture not verified | N/A |
+| Rust relay | axum WebSocket, bounded rooms | Build passed | 10 relay tests + encrypted half-close/tiny-window tests passed | N/A | Unsigned |
+| CF relay | Worker + Durable Object | Typecheck/bundle passed | 10 Workers tests + shared external conformance passed | No live account deployment | N/A |
+
+See docs/review.md for outstanding findings and the final verification record for
+commands and CI run identifiers. No physical desktop support is inferred from a
+protocol fixture or compilation alone.
