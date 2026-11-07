@@ -117,7 +117,18 @@ if ($principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administ
         $state = Join-Path $private 'state'
         [System.IO.File]::WriteAllText($config, (@{ state_dir = $state } | ConvertTo-Json))
         Set-FixtureAcl $config
-        Assert-Accepted { Assert-ServicePath $binary Binary } 'protected binary and ancestry'
+        try {
+            Assert-Accepted { Assert-ServicePath $binary Binary } 'protected binary and ancestry'
+        } catch {
+            # Only disposable fixture paths and public system ancestry ACLs; no config content.
+            $component = $binary
+            while ($component) {
+                $descriptor = Get-Acl -LiteralPath $component
+                Write-Output ("Fixture ACL " + $component + " " + $descriptor.Sddl)
+                $component = [System.IO.Path]::GetDirectoryName($component)
+            }
+            throw
+        }
         Assert-Accepted { Assert-ServiceConfiguration $config } 'protected config and absent private state'
         if (Test-Path -LiteralPath $state) { throw 'Preflight must not create state.' }
         $null = New-Item -ItemType Directory -Path $state
