@@ -135,6 +135,15 @@ impl InviteFile {
     }
 }
 
+impl Drop for InviteFile {
+    fn drop(&mut self) {
+        // flock belongs to the open file description, not just this descriptor.
+        // End our unique publication authority even if a concurrent fork still
+        // holds a copy until exec. Never inspect, replace or unlink the path.
+        let _ = fs2::FileExt::unlock(&self.lock);
+    }
+}
+
 fn validate_directory(path: &Path) -> Result<()> {
     let metadata =
         std::fs::symlink_metadata(path).context("invitation parent directory must exist")?;
@@ -266,6 +275,21 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "external replacement\n"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn drop_releases_authority_even_while_an_inherited_descriptor_exists() {
+        let dir = private_directory();
+        let path = dir.path().join("invite");
+        let file = InviteFile::acquire(&path).unwrap();
+        // A concurrent fork can retain the open file description until exec
+        // closes CLOEXEC descriptors, even after the parent's File is dropped.
+        let inherited = file.lock.try_clone().unwrap();
+        drop(file);
+        let _next = InviteFile::acquire(&path)
+            .expect("writer authority must end independently of inherited descriptors");
+        drop(inherited);
     }
 
     #[test]

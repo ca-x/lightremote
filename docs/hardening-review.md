@@ -16,10 +16,12 @@ artifact mapping. The implementation includes these corrections identified in re
 | A queued blocking file operation could survive revocation and regrant | Abort queued work and recheck the original permission generation before OS access; track started jobs through shutdown. Already-started syscalls cannot be rolled back. |
 | Deferred PTY reaping could outlive the session admission lock | A session cleanup token follows the child into the reaper; host shutdown waits for actual reaping. |
 | Two resident hosts could race to publish or clear an invitation | Retain an exclusive permanent writer lock through cleanup; reject a second publisher and unsafe invitation paths. |
+| A fork-inherited descriptor could briefly retain the writer lock after host shutdown | Explicitly unlock the unique writer authority on drop; the stable lock file remains in place. A duplicated-descriptor regression failed before this fix. |
 | Fixed RPC budgets truncated slow-profile OPEN attempts | Carry the chosen network profile through CLI control and permission exchanges. |
 | Browser send buffering escaped the write deadline and started PONG timing too early | Keep the original deadline through browser buffer drain; start PONG/RTT timing only after drain, preserving early matching replies. |
 | Service startup depended on a login HOME despite configured state | Use the daemon's permanent `state_dir/sessions.lock` for both sessions and updates, including deferred helpers. |
 | Windows SYSTEM installer trusted an arbitrary binary path and installer identity | Validate executable, ancestors and private config under the target SYSTEM/Administrators policy before executing or registering the binary. |
+| The installer rejected the standard ProgramData ancestor ACL | Permit ancestor metadata and unrelated child creation while still rejecting deletion, replacement and ACL/owner changes; keep executable, immediate parent and private leaf rules strict. |
 | A custom desktop daemon could auto-update into the official headless product | Reject desktop capability policy combined with automatic daemon updates until a matching official product exists. |
 | Client control requests could remain queued across revocation and regrant | Pending scoped calls must retain their original authorization lifetime and be cancelled before transmission when it ends. |
 | Native grants could enable an unavailable OS backend | Effective availability must also honor the host's capability flags and routes; permission grants alone are insufficient. |
@@ -51,6 +53,12 @@ Hosted platform CI is available from the [feature branch workflow runs](https://
 Windows x64, macOS x64/ARM64 and Linux x64/ARM64 separately, including the new
 headless daemon product. A successful build does not prove an installed service
 or physical desktop works.
+
+The native Windows installer suite executed 48 assertions successfully on a hosted
+Windows 2022 runner, including protected temporary paths, writable binaries and
+parents, private state, personal owner rejection and junctions. This exercised the
+administrator-token branch rather than skipping it; it made no SCM calls. The
+independent fast CI job now catches these trust checks before platform compilation.
 
 Not verified here: physical desktop capture/input, Windows SCM installation and
 stop/recovery, real Windows deferred executable replacement, macOS launchd/TCC,
