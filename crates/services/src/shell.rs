@@ -24,12 +24,16 @@ use tokio::{
     sync::{OwnedSemaphorePermit, broadcast, mpsc},
     time::timeout,
 };
+use tokio_util::task::{TaskTracker, task_tracker::TaskTrackerToken};
 
 pub(crate) const PROCESS_LIMIT: usize = reap::PROCESS_LIMIT;
 
 type Master = Arc<Mutex<Box<dyn MasterPty + Send>>>;
 #[derive(Default)]
-pub(crate) struct Shells(Mutex<HashMap<u64, Master>>);
+pub(crate) struct Shells {
+    registry: Mutex<HashMap<u64, Master>>,
+    cleanup: TaskTracker,
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,6 +51,13 @@ fn default_rows() -> u16 {
     24
 }
 
+pub(crate) struct Resources {
+    pub idle: Duration,
+    pub notifications: broadcast::Sender<Value>,
+    pub slot: Arc<OwnedSemaphorePermit>,
+    pub work: crate::work::Work,
+}
+
 pub(crate) fn size(cols: u16, rows: u16) -> Result<PtySize> {
     ensure!(
         (1..=1000).contains(&cols) && (1..=1000).contains(&rows),
@@ -61,10 +72,15 @@ pub(crate) fn size(cols: u16, rows: u16) -> Result<PtySize> {
 }
 
 impl Shells {
+    pub async fn shutdown(&self) {
+        self.cleanup.close();
+        self.cleanup.wait().await;
+    }
+
     pub fn resize(&self, stream_id: u64, cols: u16, rows: u16) -> Result<Value> {
         let size = size(cols, rows)?;
         let master = self
-            .0
+            .registry
             .lock()
             .map_err(|_| anyhow::anyhow!("shell registry unavailable"))?
             .get(&stream_id)
@@ -82,17 +98,23 @@ impl Shells {
         options: ShellOptions,
         program: Option<PathBuf>,
         io: BoxServiceIo,
-        idle: Duration,
-        notifications: broadcast::Sender<Value>,
-        slot: Arc<OwnedSemaphorePermit>,
+        resources: Resources,
     ) -> Result<()> {
+        let Resources {
+            idle,
+            notifications,
+            slot,
+            work,
+        } = resources;
         let pty_size = size(options.cols, options.rows)?;
+        let cleanup = self.cleanup.token();
         // Spawning may load user profiles; keep it off the Tokio worker threads.
-        let mut session =
-            tokio::task::spawn_blocking(move || Session::spawn(pty_size, program, slot)).await??;
+        let mut session = work
+            .run(move |_| Session::spawn(pty_size, program, slot, cleanup))
+            .await?;
         {
             let mut shells = self
-                .0
+                .registry
                 .lock()
                 .map_err(|_| anyhow::anyhow!("shell registry unavailable"))?;
             ensure!(
@@ -112,7 +134,10 @@ impl Shells {
             let receive = async move {
                 let mut bytes = vec![0; CHUNK];
                 loop {
-                    let n = timeout(idle, input.read(&mut bytes)).await??;
+                    // Silence is normal in an interactive terminal. RESET and
+                    // carrier failure cancel the service independently; only
+                    // actual backpressure waits have an application deadline.
+                    let n = input.read(&mut bytes).await?;
                     if n == 0 {
                         // FIN closes only PTY input. Drain accepted input before
                         // delivering canonical EOF; keep reading shell output.
@@ -125,7 +150,7 @@ impl Shells {
                 }
             };
             let send = async {
-                while let Some(bytes) = timeout(idle, session.output.recv()).await? {
+                while let Some(bytes) = session.output.recv().await {
                     timeout(idle, output.write_all(&bytes?)).await??;
                 }
                 timeout(idle, output.shutdown()).await??;
@@ -154,7 +179,7 @@ struct Registration {
 }
 impl Drop for Registration {
     fn drop(&mut self) {
-        if let Ok(mut shells) = self.shells.0.lock() {
+        if let Ok(mut shells) = self.shells.registry.lock() {
             shells.remove(&self.id);
         }
     }
@@ -182,6 +207,7 @@ struct Session {
     output: mpsc::Receiver<std::io::Result<Vec<u8>>>,
     workers: Vec<JoinHandle<()>>,
     lease: Option<reap::Lease>,
+    cleanup: Option<TaskTrackerToken>,
     #[cfg(unix)]
     tree: Option<unix::Tree>,
 }
@@ -191,6 +217,7 @@ impl Session {
         size: PtySize,
         program: Option<PathBuf>,
         slot: Arc<OwnedSemaphorePermit>,
+        cleanup: TaskTrackerToken,
     ) -> Result<Self> {
         let lease = reap::Lease::reserve()?;
         let pair = native_pty_system().openpty(size)?;
@@ -217,6 +244,7 @@ impl Session {
             output: output_rx,
             workers: Vec::new(),
             lease: Some(lease),
+            cleanup: Some(cleanup),
             #[cfg(unix)]
             tree: None,
         };
@@ -258,6 +286,7 @@ impl Session {
             workers: std::mem::take(&mut self.workers),
             _slot: self.slot.clone(),
             lease: self.lease.take(),
+            cleanup: self.cleanup.take(),
             #[cfg(unix)]
             tree: self.tree.take(),
         })
@@ -375,6 +404,7 @@ struct Cleanup {
     workers: Vec<JoinHandle<()>>,
     _slot: Arc<OwnedSemaphorePermit>,
     lease: Option<reap::Lease>,
+    cleanup: Option<TaskTrackerToken>,
     #[cfg(unix)]
     tree: Option<unix::Tree>,
 }
@@ -426,7 +456,7 @@ impl Cleanup {
             // A single bounded supervisor keeps its wait handle and eventually
             // reaps it, without retaining this stream permit or worker thread.
             if let Some(lease) = self.lease.take() {
-                lease.defer(child, self.reporter.take());
+                lease.defer(child, self.reporter.take(), self.cleanup.take());
             }
             return Err(anyhow::anyhow!(
                 "PTY child did not exit before cleanup deadline"
@@ -447,7 +477,7 @@ impl Drop for Cleanup {
             }
             let _ = child.kill();
             if let Some(lease) = self.lease.take() {
-                lease.defer(child, self.reporter.take());
+                lease.defer(child, self.reporter.take(), self.cleanup.take());
             }
         }
     }
@@ -468,6 +498,7 @@ impl Drop for Session {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use crate::{HostConfig, HostServices};
     #[test]
     fn idle_reader_and_saturated_writer_cancel_while_slave_stays_open() {
         let pair = native_pty_system().openpty(PtySize::default()).unwrap();
@@ -536,42 +567,81 @@ mod tests {
             self.dropped.store(true, Ordering::Release);
         }
     }
-    #[test]
-    fn deferred_reap_does_not_retain_service_slot_and_eventually_reaps() {
-        let slots = Arc::new(tokio::sync::Semaphore::new(1));
-        let exited = Arc::new(AtomicBool::new(false));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let cleanup = Cleanup {
+    fn deferred_cleanup(
+        host: &HostServices,
+        exited: &Arc<AtomicBool>,
+        dropped: &Arc<AtomicBool>,
+    ) -> Cleanup {
+        Cleanup {
             child: Some(Box::new(DeferredChild {
                 exited: exited.clone(),
                 dropped: dropped.clone(),
             })),
             reporter: None,
             workers: Vec::new(),
-            _slot: Arc::new(slots.clone().try_acquire_owned().unwrap()),
+            _slot: Arc::new(host.0.streams.clone().try_acquire_owned().unwrap()),
             lease: Some(reap::Lease::reserve().unwrap()),
+            cleanup: Some(host.0.shells.cleanup.token()),
             tree: None,
-        };
-        let start = Instant::now();
-        assert!(cleanup.run().is_err());
-        assert!(start.elapsed() < Duration::from_secs(2));
+        }
+    }
+
+    async fn assert_shutdown_waits_for_reap(
+        host: &HostServices,
+        exited: &AtomicBool,
+        dropped: &AtomicBool,
+    ) {
         assert_eq!(
-            slots.available_permits(),
-            1,
+            host.0.streams.available_permits(),
+            host.0.config.max_concurrent_streams,
             "deferred child retained service permit"
         );
+        assert!(!dropped.load(Ordering::Acquire), "child was not deferred");
+        let mut shutdown = Box::pin(host.shutdown());
         assert!(
-            !dropped.load(Ordering::Acquire),
-            "unreaped child was discarded"
+            std::future::poll_fn(|cx| {
+                std::task::Poll::Ready(shutdown.as_mut().poll(cx).is_pending())
+            })
+            .await,
+            "shutdown ignored the deferred child"
         );
+        let other = HostServices::new(HostConfig::default()).unwrap();
+        timeout(Duration::from_secs(1), other.shutdown())
+            .await
+            .expect("another session waited for this deferred child")
+            .unwrap();
         exited.store(true, Ordering::Release);
-        let deadline = Instant::now() + Duration::from_secs(1);
-        while !dropped.load(Ordering::Acquire) && Instant::now() < deadline {
-            std::thread::sleep(IO_POLL);
-        }
+        timeout(Duration::from_secs(2), shutdown)
+            .await
+            .expect("shutdown did not resume after reap")
+            .unwrap();
+        assert!(dropped.load(Ordering::Acquire), "child was not reclaimed");
+    }
+
+    #[tokio::test]
+    async fn deferred_reap_releases_stream_slot_but_keeps_session_shutdown_pending() {
+        let host = HostServices::new(HostConfig::default()).unwrap();
+        let exited = Arc::new(AtomicBool::new(false));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let cleanup = deferred_cleanup(&host, &exited, &dropped);
+        let start = Instant::now();
         assert!(
-            dropped.load(Ordering::Acquire),
-            "deferred supervisor failed to reap child"
+            tokio::task::spawn_blocking(move || cleanup.run())
+                .await
+                .unwrap()
+                .is_err()
         );
+        assert!(start.elapsed() < Duration::from_secs(2));
+        assert_shutdown_waits_for_reap(&host, &exited, &dropped).await;
+    }
+
+    #[tokio::test]
+    async fn cleanup_drop_fallback_keeps_session_shutdown_pending() {
+        let host = HostServices::new(HostConfig::default()).unwrap();
+        let exited = Arc::new(AtomicBool::new(false));
+        let dropped = Arc::new(AtomicBool::new(false));
+        // Thread creation failure drops the cleanup closure without calling run.
+        drop(deferred_cleanup(&host, &exited, &dropped));
+        assert_shutdown_waits_for_reap(&host, &exited, &dropped).await;
     }
 }

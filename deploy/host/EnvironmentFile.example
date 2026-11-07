@@ -1,0 +1,22 @@
+# systemd syntax, NOT a shell script. No $HOME or variable expansion here.
+# Use literal absolute paths if overriding the runner defaults. Quote spaces.
+# Set this to yes ONLY after choosing the long-lived unattended permissions below.
+LIGHTREMOTE_POLICY_CONFIRMED=no
+LIGHTREMOTE_RELAY_URL=https://relay.example.invalid
+LIGHTREMOTE_WEB_URL=https://client.example.invalid/
+# Replace locally; never commit or print this file after entering a credential.
+LIGHTREMOTE_RELAY_TOKEN=REPLACE_WITH_OPERATOR_TOKEN
+# Defaults: ~/.local/bin/lightremote and ~/.local/state/lightremote-host
+# LIGHTREMOTE_BINARY="/ABSOLUTE/USER/PATH/.local/bin/lightremote"
+# LIGHTREMOTE_STATE_DIR="/ABSOLUTE/USER/PATH/.local/state/lightremote-host"
+# Setting a share directory enables file READ access. Empty means no file access.
+LIGHTREMOTE_SHARE_DIR=
+LIGHTREMOTE_ALLOW_SHELL=0
+LIGHTREMOTE_ALLOW_WRITE=0
+LIGHTREMOTE_ALLOW_DESKTOP=0
+LIGHTREMOTE_ALLOW_INPUT=0
+LIGHTREMOTE_ALLOW_CLIPBOARD=0
+LIGHTREMOTE_ALLOW_CLIPBOARD_READ=0
+LIGHTREMOTE_ALLOW_CLIPBOARD_WRITE=0
+# Opt in only for verified stable GitHub Releases and a user-writable executable.
+LIGHTREMOTE_AUTO_UPDATE=0

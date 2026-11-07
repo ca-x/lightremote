@@ -143,6 +143,7 @@ pub(crate) async fn serve(
     mut io: BoxServiceIo,
     idle: Duration,
     slot: Arc<OwnedSemaphorePermit>,
+    work: crate::work::Work,
 ) -> Result<()> {
     ensure!((1..=30).contains(&options.fps), "fps out of bounds");
     ensure!(
@@ -155,11 +156,12 @@ pub(crate) async fn serve(
         let display = options.display;
         let quality = options.quality;
         let capture_slot = slot.clone();
-        let frame = tokio::task::spawn_blocking(move || {
-            let _slot = capture_slot;
-            capture(display, quality)
-        })
-        .await??;
+        let frame = work
+            .run(move |_| {
+                let _slot = capture_slot;
+                capture(display, quality)
+            })
+            .await?;
         write_record(&mut io, &frame, FRAME_LIMIT, idle).await?;
         if options.single {
             timeout(idle, io.shutdown()).await??;
@@ -383,17 +385,19 @@ pub(crate) async fn input(
     idle: Duration,
     slot: Arc<OwnedSemaphorePermit>,
     input: OwnedSemaphorePermit,
+    work: crate::work::Work,
 ) -> Result<()> {
-    let mut state =
-        tokio::task::spawn_blocking(move || InputState::new(options.display, slot, input))
-            .await??;
+    let mut state = work
+        .run(move |_| InputState::new(options.display, slot, input))
+        .await?;
     while let Some(record) = read_record(&mut io, INPUT_LIMIT, idle).await? {
         let input: Input = serde_json::from_slice(&record).context("invalid input record")?;
-        state = tokio::task::spawn_blocking(move || {
-            state.apply(input)?;
-            Ok::<_, anyhow::Error>(state)
-        })
-        .await??;
+        state = work
+            .run(move |_| {
+                state.apply(input)?;
+                Ok::<_, anyhow::Error>(state)
+            })
+            .await?;
     }
     Ok(())
 }

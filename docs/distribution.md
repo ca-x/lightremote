@@ -13,13 +13,13 @@ The Dockerfile builds the relay as a standalone crate using its own committed
 `.github/workflows/ci.yml` runs for branch pushes and pull requests and is also
 called by the tag release workflow. It contains independent Rust, web, and
 Cloudflare check jobs. Rust checks use the workspace's **default-members**
-(core, services, CLI, and relay); NSH is compiled separately on each platform.
+(core, services, CLI, relay, updater, and daemon); NSH is compiled separately on each platform.
 
 - Rust: `cargo fmt --all -- --check`, Clippy for all targets with and without
   default features, and tests in both configurations. Clippy denies warnings.
 - Web: `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`.
 - Cloudflare: `npm ci`, `npm run check` (TypeScript), and `npm test`.
-- Platform builds: desktop CLI, headless CLI, relay, and native NSH controller.
+- Platform builds: desktop CLI, headless CLI, relay, native NSH controller, and headless daemon.
 
 `bash scripts/check.sh [rust|web|cloudflare|all]` reproduces the check commands.
 Run `npm ci` in each npm project before invoking this script. Browser Playwright
@@ -74,6 +74,8 @@ The headless executable is built separately with:
 ```sh
 cargo build --locked --release --target TARGET --target-dir target/headless \
   -p lightremote --no-default-features
+cargo build --locked --release --target TARGET --target-dir target/headless \
+  -p lightremote-daemon --no-default-features
 ```
 
 It has the same executable name, `lightremote` (`lightremote.exe` on Windows),
@@ -90,25 +92,31 @@ choose which version to put on `PATH`.
 4. Only after those jobs pass does it create a GitHub release containing the
    compiled binaries, web archive, unsigned notice, and checksums.
 
-Each platform produces four archives, named
+The next release will produce five archives per platform, named
 `COMPONENT-vVERSION-TARGET.tar.gz` (`.zip` for Windows). Components are
-`lightremote`, `lightremote-headless`, `lightremote-native`, and
-`lightremote-relay`. The native NSH build is not a renamed CLI. The separate
+`lightremote`, `lightremote-headless`, `lightremote-native`, `lightremote-relay`,
+and `lightremote-daemon`. The daemon is built in the isolated headless target
+directory with default features disabled; it is a separate resident host service. The native
+NSH build is not a renamed CLI. The separate
 web archive is `lightremote-web-vVERSION.tar.gz`. All archives have a single
 containing directory and an `UNSIGNED.txt` notice. `SHA256SUMS` covers the
-complete set of 21 archives and the top-level notice. Packaging fails if an
+complete set of 26 archives and the top-level notice. Packaging fails if an
 expected target/component is missing or an unexpected file appears.
+The daemon archive also includes its configuration example, service templates and
+deployment/update instructions. Existing v0.1.1 remains the original four-product
+release with 23 assets; it is not replaced or expanded by this branch.
 
 For a local packaging check, build the executables first, then use:
 
 ```sh
-python3 scripts/release.py binaries --version v0.1.1 \
+python3 scripts/release.py binaries --version dev-check \
   --target x86_64-unknown-linux-gnu \
   --binary-dir target/x86_64-unknown-linux-gnu/release \
-  --headless-dir target/headless/x86_64-unknown-linux-gnu/release --output dist
-python3 scripts/release.py web --version v0.1.1 --web-dir web/dist --output dist
+  --headless-dir target/headless/x86_64-unknown-linux-gnu/release \
+  --daemon-dir target/headless/x86_64-unknown-linux-gnu/release --output dist
+python3 scripts/release.py web --version dev-check --web-dir web/dist --output dist
 # Run once all five target archives have been collected:
-python3 scripts/release.py checksums --version v0.1.1 --directory dist
+python3 scripts/release.py checksums --version dev-check --directory dist
 ```
 
 The packager requires Python 3.11 or newer. To check downloaded files on Linux,

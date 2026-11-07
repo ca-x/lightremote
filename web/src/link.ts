@@ -26,6 +26,34 @@ const STREAM_WINDOW = 128 * 1024,
   CONNECTION_WINDOW = 1024 * 1024;
 const MAX_QUEUE = 2 * 1024 * 1024,
   MAX_CHUNKS = 256;
+/** Local budgets in milliseconds; connectTimeoutMs covers the entire negotiation. */
+export interface LinkOptions {
+  connectTimeoutMs: number;
+  openTimeoutMs: number;
+  sendTimeoutMs: number;
+  heartbeatIntervalMs: number;
+  heartbeatTimeoutMs: number;
+  degradedAfterMs: number;
+  drainTimeoutMs: number;
+}
+const DEFAULT_OPTIONS: Readonly<LinkOptions> = {
+  connectTimeoutMs: 20_000,
+  openTimeoutMs: 15_000,
+  sendTimeoutMs: 20_000,
+  heartbeatIntervalMs: 10_000,
+  heartbeatTimeoutMs: 30_000,
+  degradedAfterMs: 3_000,
+  drainTimeoutMs: 15_000,
+};
+export interface LinkHealth {
+  readonly phase: "healthy" | "degraded" | "closed";
+  readonly rtt_ms: number | null;
+}
+interface Outbound {
+  bytes: Uint8Array;
+  deadline: number;
+  sent?: () => void;
+}
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (error: Error) => void;
   const promise = new Promise<T>((yes, no) => {
@@ -206,7 +234,7 @@ export class Link {
   private readonly decoder = new IncrementalDecoder((packet) =>
     this.receive(packet),
   );
-  private outbound: Uint8Array[] = [];
+  private outbound: Outbound[] = [];
   private outboundSize = 0;
   private sending = false;
   private inboundSize = 0;
@@ -224,14 +252,26 @@ export class Link {
   private drainDeadline?: ReturnType<typeof setTimeout>;
   private drainPoll?: ReturnType<typeof setTimeout>;
   private timeout: ReturnType<typeof setTimeout>;
+  private heartbeatTimer?: ReturnType<typeof setTimeout>;
+  private heartbeat?: { token: bigint; queuedAt: number; sentAt?: number; pongAt?: number };
+  private sendDeadline?: ReturnType<typeof setTimeout>;
+  private sendPoll?: ReturnType<typeof setTimeout>;
+  private sendWake?: () => void;
+  private abortCleanup?: () => void;
+  private readonly openTimers = new Set<ReturnType<typeof setTimeout>>();
+  private currentHealth: LinkHealth = { phase: "healthy", rtt_ms: null };
+  /** Called on changes; read health immediately after subscribing for the current value. */
+  onHealth?: (health: LinkHealth) => void;
+  get health(): LinkHealth { return { ...this.currentHealth }; }
   private constructor(
     private socket: WebSocket,
     private invite: Invite,
     readonly onClose: (reason: Error) => void,
+    private readonly options: Readonly<LinkOptions>,
   ) {
     this.timeout = setTimeout(
       () => this.close(new Error("Encrypted TMP handshake timed out")),
-      20_000,
+      options.connectTimeoutMs,
     );
     const hello = makeHello("client");
     socket.binaryType = "arraybuffer";
@@ -240,7 +280,11 @@ export class Link {
         this.close(new Error("Relay did not select lightremote.v1"));
         return;
       }
-      socket.send(new TextEncoder().encode(JSON.stringify(hello)));
+      try {
+        socket.send(new TextEncoder().encode(JSON.stringify(hello)));
+      } catch (error) {
+        this.close(errorOf(error));
+      }
     };
     socket.onmessage = (event) => {
       if (
@@ -317,21 +361,24 @@ export class Link {
     invite: Invite,
     onClose: (reason: Error) => void = () => {},
     signal?: AbortSignal,
+    options: Partial<LinkOptions> = {},
   ): Promise<Link> {
     if (signal?.aborted) throw new Error("Connection cancelled");
+    const budgets = { ...DEFAULT_OPTIONS, ...options };
+    if (Object.values(budgets).some(value => !Number.isFinite(value) || value < 1 || value > 300_000)
+      || budgets.degradedAfterMs > budgets.heartbeatTimeoutMs)
+      throw new Error("Link budgets must be 1..300000ms, with degradation before heartbeat timeout");
     const socket = new WebSocket(websocketURL(invite), [
       "lightremote.v1",
       `client.${invite.client_token}`,
     ]);
-    const link = new Link(socket, invite, onClose);
+    const link = new Link(socket, invite, onClose, budgets);
     const abort = () => link.close(new Error("Connection cancelled"));
     signal?.addEventListener("abort", abort, { once: true });
-    try {
-      await link.ready.promise;
-      return link;
-    } finally {
-      signal?.removeEventListener("abort", abort);
-    }
+    link.abortCleanup = () => signal?.removeEventListener("abort", abort);
+    if (signal?.aborted) abort();
+    await link.ready.promise;
+    return link;
   }
   get draining(): boolean {
     return this.session.draining;
@@ -363,13 +410,15 @@ export class Link {
     this.emit([packet]);
     const timeout = setTimeout(
       () => stream.reset("Stream open timed out"),
-      15_000,
+      this.options.openTimeoutMs,
     );
+    this.openTimers.add(timeout);
     try {
       await stream.accepted.promise;
       return stream;
     } finally {
       clearTimeout(timeout);
+      this.openTimers.delete(timeout);
     }
   }
   private receive(packet: Packet): void {
@@ -385,6 +434,7 @@ export class Link {
   private event(event: Event): void {
     if (event.type === "ready") {
       clearTimeout(this.timeout);
+      this.armHeartbeat(this.options.heartbeatIntervalMs);
       this.ready.resolve();
     } else if (event.type === "open")
       this.emit(
@@ -395,14 +445,17 @@ export class Link {
         ),
       );
     else if (event.type === "goaway") {
+      clearTimeout(this.heartbeatTimer);
+      this.heartbeat = undefined;
       this.drainReason = event.reason || "GOAWAY";
       this.drainDeadline ??= setTimeout(
         () => this.close(new Error("Host session drain timed out")),
-        15_000,
+        this.options.drainTimeoutMs,
       );
     } else if (event.type === "pong") {
       if (this.drainProbe !== undefined && event.token === this.drainProbe)
         this.drainAcknowledged = true;
+      this.acceptHeartbeatPong(event.token, performance.now());
     } else if ("id" in event) {
       const stream = this.streams.get(event.id);
       if (!stream) return;
@@ -417,6 +470,59 @@ export class Link {
         );
       }
     }
+  }
+  private setHealth(health: LinkHealth): void {
+    if (health.phase === this.currentHealth.phase && health.rtt_ms === this.currentHealth.rtt_ms) return;
+    this.currentHealth = health;
+    // A view callback must not stop carrier cleanup or turn a valid PONG into failure.
+    try { this.onHealth?.(this.health); } catch { /* Observer errors do not own the link. */ }
+  }
+  private armHeartbeat(delay: number): void {
+    clearTimeout(this.heartbeatTimer);
+    if (this.dead || this.draining) return;
+    this.heartbeatTimer = setTimeout(() => this.probe(), Math.max(1, delay));
+  }
+  private acceptHeartbeatPong(token: bigint, receivedAt: number): void {
+    const pending = this.heartbeat;
+    if (!pending || pending.token !== token) return;
+    if (pending.sentAt === undefined) {
+      // A reply can arrive before the polling task observes browser drain.
+      pending.pongAt ??= receivedAt;
+      return;
+    }
+    const rtt = Math.max(0, Math.round(receivedAt - pending.sentAt));
+    this.heartbeat = undefined;
+    this.setHealth({ phase: rtt >= this.options.degradedAfterMs ? "degraded" : "healthy", rtt_ms: rtt });
+    this.armHeartbeat(this.options.heartbeatIntervalMs);
+  }
+  private probe(): void {
+    if (this.dead || this.draining) return;
+    const now = performance.now();
+    if (!this.heartbeat) {
+      const token = new DataView(crypto.getRandomValues(new Uint8Array(8)).buffer).getBigUint64(0);
+      const probe = { token, queuedAt: now, sentAt: undefined as number | undefined,
+        pongAt: undefined as number | undefined };
+      this.heartbeat = probe;
+      this.emit([this.session.ping(token)], () => {
+        probe.sentAt = performance.now();
+        if (this.heartbeat === probe) {
+          if (probe.pongAt !== undefined) this.acceptHeartbeatPong(token, probe.pongAt);
+          else this.armHeartbeat(this.options.degradedAfterMs);
+        }
+      });
+    }
+    const pending = this.heartbeat;
+    if (!pending || this.dead) return;
+    const elapsed = now - (pending.sentAt ?? pending.queuedAt);
+    const budget = pending.sentAt === undefined ? this.options.sendTimeoutMs : this.options.heartbeatTimeoutMs;
+    if (elapsed >= budget) {
+      this.close(new Error(pending.sentAt === undefined ? "Heartbeat carrier queue timed out" : "Peer heartbeat timed out"));
+      return;
+    }
+    if (elapsed >= this.options.degradedAfterMs)
+      this.setHealth({ ...this.currentHealth, phase: "degraded" });
+    this.armHeartbeat(Math.min(budget - elapsed,
+      elapsed < this.options.degradedAfterMs ? this.options.degradedAfterMs - elapsed : budget - elapsed));
   }
   consume(stream: MuxStream, count: number): void {
     if (this.dead || !this.streams.has(stream.id)) return;
@@ -534,7 +640,7 @@ export class Link {
       });
     }
   }
-  private emit(packets: Packet[]): void {
+  private emit(packets: Packet[], sent?: () => void): void {
     if (this.dead) return;
     for (const packet of packets) {
       const bytes = encode(packet);
@@ -545,27 +651,52 @@ export class Link {
         this.close(new Error("Carrier send queue exceeded"));
         return;
       }
-      this.outbound.push(bytes);
+      this.outbound.push({ bytes, deadline: performance.now() + this.options.sendTimeoutMs, sent });
       this.outboundSize += bytes.length;
     }
     void this.flush();
+  }
+  private async waitForBrowserDrain(deadline: number, limit = 0): Promise<void> {
+    let delay = 1;
+    while (!this.dead && this.socket.bufferedAmount > limit) {
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) throw new Error("Carrier send timed out");
+      await new Promise<void>((resolve) => {
+        this.sendWake = resolve;
+        this.sendPoll = setTimeout(() => {
+          this.sendPoll = undefined;
+          this.sendWake = undefined;
+          resolve();
+        }, Math.min(delay, remaining));
+      });
+      delay = Math.min(delay * 2, 10);
+    }
   }
   private async flush(): Promise<void> {
     if (this.sending || !this.tx || this.dead) return;
     this.sending = true;
     try {
       while (this.outbound.length && !this.dead) {
-        const started = Date.now();
-        while (this.socket.bufferedAmount > 256 * 1024 && !this.dead) {
-          if (Date.now() - started > 15_000) throw new Error("Carrier stalled");
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
+        const item = this.outbound[0];
+        const remaining = item.deadline - performance.now();
+        if (remaining <= 0) throw new Error("Carrier send queue timed out");
+        this.sendDeadline = setTimeout(() => this.close(new Error("Carrier send timed out")), remaining);
+        await this.waitForBrowserDrain(item.deadline, 256 * 1024);
         if (this.dead) break;
-        const bytes = this.outbound.shift()!;
-        const record = await this.tx.seal(bytes);
+        const record = await this.tx.seal(item.bytes);
         if (this.dead) break;
+        if (performance.now() >= item.deadline) throw new Error("Carrier send queue timed out");
         this.socket.send(record);
-        this.outboundSize -= bytes.length;
+        // send() only enqueues bytes in the browser; retain this record's deadline
+        // and FIFO slot until those bytes have left the browser's outgoing queue.
+        await this.waitForBrowserDrain(item.deadline);
+        if (this.dead) break;
+        if (performance.now() >= item.deadline) throw new Error("Carrier send timed out");
+        clearTimeout(this.sendDeadline);
+        this.sendDeadline = undefined;
+        this.outbound.shift();
+        this.outboundSize -= item.bytes.length;
+        item.sent?.();
         this.pump();
       }
     } catch (error) {
@@ -581,6 +712,16 @@ export class Link {
     clearTimeout(this.timeout);
     clearTimeout(this.drainDeadline);
     clearTimeout(this.drainPoll);
+    clearTimeout(this.heartbeatTimer);
+    clearTimeout(this.sendDeadline);
+    clearTimeout(this.sendPoll);
+    this.sendWake?.();
+    this.sendWake = undefined;
+    this.heartbeat = undefined;
+    for (const timer of this.openTimers) clearTimeout(timer);
+    this.openTimers.clear();
+    this.abortCleanup?.();
+    this.abortCleanup = undefined;
     this.session.close();
     this.tx?.destroy();
     this.rx?.destroy();
@@ -596,7 +737,8 @@ export class Link {
       this.socket.onerror =
       this.socket.onclose =
         null;
-    this.socket.close(1000, "Session ended");
+    try { this.socket.close(1000, "Session ended"); } catch { /* Already closed. */ }
+    this.setHealth({ ...this.currentHealth, phase: "closed" });
     this.onClose(reason);
   }
 }

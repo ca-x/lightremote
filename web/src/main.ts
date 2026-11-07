@@ -2,11 +2,24 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
-import { Link, type MuxStream } from "./link";
+import { Link, type MuxStream, type LinkHealth } from "./link";
 import { parseInvite } from "./secure";
 import { Records, jsonFrame } from "./records";
 import { jpegDimensions } from "./jpeg";
 import { Control, object, upload, download } from "./client";
+import {
+  permissionDetails,
+  scopes,
+  parsePermissions,
+  effectivePermission,
+  acceptPermissions,
+  type Scope,
+  type PermissionSnapshot,
+} from "./permissions";
+import { watchUpdates } from "./updates";
+declare const __APP_VERSION__: string;
+const appVersion =
+  typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : undefined;
 
 const icons: Record<string, string> = {
   session:
@@ -37,6 +50,8 @@ $("app").innerHTML = `
   <header class="topbar"><span><span class="muted">Workspace</span><span class="slash">/</span><span id="breadcrumb">Session</span></span><span class="status" id="status" role="status"><i></i><span id="status-label">Disconnected</span></span></header>
   <main id="main" tabindex="-1">
     <div id="error" class="notice error" role="alert" hidden><span id="error-text"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>
+    <div id="network-notice" class="notice" role="status" hidden></div>
+    <div id="update-notice" class="notice update-notice" role="status" hidden><span id="update-message"></span><button id="update-refresh">Refresh workspace</button></div>
     <section id="view-session" class="view">
       <div class="page-heading"><div><p class="eyebrow">CONNECTION</p><h1>Session</h1><p class="lead">Connect to a host and choose a tool.</p></div><span class="section-number">01 / SESSION</span></div>
       <div class="session-grid">
@@ -48,11 +63,13 @@ $("app").innerHTML = `
         <section class="session-note"><span class="note-symbol" aria-hidden="true">◇</span><h2>Host permissions</h2><p>The host decides which tools are available. Desktop and input need local permission. Shell and files work on headless hosts.</p><div class="rule"></div><p class="small">Use a client origin you trust. For sensitive sessions, serve this client independently of the relay.</p><span class="tag">NO BACKGROUND CLIPBOARD ACCESS</span></section>
       </div>
       <section class="capabilities-section"><div class="section-title"><h2>Host capabilities</h2><span class="muted small" id="capability-status">Available after connection</span></div><div id="capabilities" class="capabilities"><p class="muted">Connect to discover what this host allows.</p></div></section>
+      <section class="permissions-section" aria-labelledby="permissions-title"><div class="section-title"><h2 id="permissions-title">Session permissions</h2><span id="permission-mode" class="muted small">Host approval required</span></div><p class="muted">Choose what you need. Only the host can approve access.</p><form id="permissions-form"><div id="permission-list" class="permission-list"></div><div class="actions wrap"><button id="permissions-request" class="primary" disabled>Request selected permissions</button><button id="permissions-cancel" type="button" disabled>Cancel request</button></div><p id="permission-feedback" class="field-help" role="status">Connect to see available permissions.</p></form></section>
       <section class="clipboard-section"><div><p class="eyebrow">ON YOUR TERMS</p><h2>Clipboard</h2><p>Read or change the host clipboard only when you choose.</p></div><div><label for="clipboard">Clipboard text</label><textarea id="clipboard" rows="3" placeholder="Text to share with the host" maxlength="262144"></textarea><div class="actions wrap"><button id="clipboard-get" data-connected disabled>Read from host</button><button id="clipboard-set" data-connected disabled>Send to host</button><button id="clipboard-local">Paste from this device</button><button id="clipboard-copy">Copy to this device</button></div><p class="field-help" id="clipboard-status" role="status">No clipboard access requested.</p></div></section>
     </section>
     <section id="view-desktop" class="view" hidden>
       <div class="page-heading"><div><p class="eyebrow">REMOTE VIEW</p><h1>Desktop</h1><p class="lead">A live view, with control when you enable it.</p></div><span class="section-number">02 / DESKTOP</span></div>
-      <div class="toolbar"><label class="inline-label">Display <select id="display" aria-label="Display"><option value="0">Display 0</option></select></label><button id="refresh-displays" data-connected disabled>Find displays</button><div class="toolbar-spacer"></div><button id="desktop-start" class="primary" data-connected disabled>Start view</button><button id="desktop-stop" disabled>Stop</button><button id="screenshot" data-connected disabled>Save screenshot</button></div>
+      <div class="toolbar"><label class="inline-label">Display <select id="display" aria-label="Display"><option value="0">Display 0</option></select></label><button id="refresh-displays" data-connected disabled>Find displays</button><label class="inline-label">Bandwidth <select id="desktop-bandwidth" aria-label="Bandwidth" aria-describedby="bandwidth-help"><option value="standard">Standard</option><option value="low">Low bandwidth</option></select></label><div class="toolbar-spacer"></div><button id="desktop-start" class="primary" data-connected disabled>Start view</button><button id="desktop-stop" disabled>Stop</button><button id="screenshot" data-connected disabled>Save screenshot</button></div>
+      <p class="field-help" id="bandwidth-help">Standard: 10 fps, quality 70. Low bandwidth: 3 fps, quality 40. Changes apply next time you start a view.</p>
       <div class="desktop-stage" id="desktop-stage"><div class="stage-empty" id="desktop-empty">${icon("desktop")}<h2>Your desktop appears here</h2><p id="desktop-message">Connect to a host, then start a view.</p></div><canvas id="desktop-canvas" tabindex="0" aria-label="Remote desktop. Enable control to send pointer and keyboard input." hidden></canvas></div>
       <div class="desktop-footer"><label class="check"><input id="enable-input" type="checkbox" disabled> Enable remote control</label><span id="desktop-status" role="status">No desktop stream</span><span class="muted small">JPEG / encrypted TMP</span></div>
       <div class="text-input-row"><label class="sr-only" for="remote-text">Text to type remotely</label><input id="remote-text" placeholder="Type text on the host, including non-Latin text" maxlength="4096"><button id="send-text" disabled>Send text</button></div>
@@ -69,10 +86,10 @@ $("app").innerHTML = `
       <form id="path-form" class="toolbar"><button type="button" id="files-up" aria-label="Parent directory" data-connected disabled>↑</button><label class="sr-only" for="file-path">Relative directory path</label><input id="file-path" value="." spellcheck="false" autocomplete="off"><button id="files-refresh" data-connected disabled>Browse</button><label class="button primary" for="upload" id="upload-label" aria-disabled="true">Upload file ↗</label><input type="file" id="upload" class="sr-only" disabled></form>
       <div class="file-table-wrap"><table><thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col" class="numeric">Size</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="file-entries"><tr><td colspan="4" class="empty-table">Connect to browse shared files.</td></tr></tbody></table></div>
       <div class="file-footer"><span id="file-count">0 items</span><span id="transfer-status" role="status">No transfer in progress</span></div>
-      <form id="mkdir-form" class="text-input-row"><label class="sr-only" for="folder-name">New folder name</label><input id="folder-name" placeholder="New folder name" maxlength="255"><button data-connected disabled>Create folder</button></form>
+      <form id="mkdir-form" class="text-input-row"><label class="sr-only" for="folder-name">New folder name</label><input id="folder-name" placeholder="New folder name" maxlength="255"><button id="mkdir" data-connected disabled>Create folder</button></form>
       <p class="field-help">Uploads require host write permission and never overwrite an existing file.</p>
     </section>
-  </main><footer class="app-footer"><span>LIGHTREMOTE</span><span id="footer-status">Your workspace, wherever you are.</span><span>V0.1</span></footer>
+  </main><footer class="app-footer"><span>LIGHTREMOTE</span><span id="footer-status">Your workspace, wherever you are.</span><a href="https://github.com/lib-x/lightremote/releases/latest" target="_blank" rel="noopener noreferrer">Official releases ↗</a></footer>
 </div>`;
 
 let link: Link | undefined,
@@ -80,6 +97,290 @@ let link: Link | undefined,
   connecting = false,
   generation = 0;
 let connectionAbort: AbortController | undefined;
+let permissions: PermissionSnapshot | undefined,
+  capabilities: Record<string, unknown> | undefined;
+let permissionBusy = false;
+let capabilityRefresh:
+  | { owner: Control; dirty: boolean; promise: Promise<void> }
+  | undefined;
+let linkHealth: LinkHealth | undefined;
+let transferAbort: AbortController | undefined,
+  transferScope: Scope | undefined;
+let screenshotAbort: AbortController | undefined;
+const consumedInvites = new Set<string>();
+function allowed(scope: Scope) {
+  return !!link && effectivePermission(permissions, capabilities, scope);
+}
+function requirePermission(scope: Scope) {
+  if (!navigator.onLine)
+    throw new Error(
+      "You are offline. Operations are not retried automatically.",
+    );
+  if (!allowed(scope))
+    throw new Error(`Host approval required: ${permissionDetails[scope][0]}`);
+}
+function updateActions() {
+  const groups: [Scope, string[]][] = [
+    ["desktop", ["refresh-displays", "desktop-start", "screenshot"]],
+    ["shell", ["terminal-start"]],
+    ["file_read", ["files-up", "files-refresh"]],
+    ["file_write", ["mkdir"]],
+    ["clipboard_read", ["clipboard-get"]],
+    ["clipboard_write", ["clipboard-set"]],
+  ];
+  for (const [scope, ids] of groups)
+    for (const id of ids)
+      button(id).disabled =
+        !allowed(scope) ||
+        !navigator.onLine ||
+        (id === "desktop-start" && !!desktop) ||
+        (id === "terminal-start" && !!shell) ||
+        (id === "screenshot" && !!screenshotAbort);
+  input("upload").disabled =
+    !allowed("file_write") || fileBusy || !navigator.onLine;
+  $("upload-label").setAttribute(
+    "aria-disabled",
+    String(input("upload").disabled),
+  );
+  input("enable-input").disabled =
+    !allowed("input") || !desktop || canvas.hidden || !navigator.onLine;
+  button("send-text").disabled =
+    !allowed("input") || !inputStream || !navigator.onLine;
+  for (const el of document.querySelectorAll<HTMLButtonElement>(
+    "[data-file-scope]",
+  ))
+    el.disabled = !allowed(el.dataset.fileScope as Scope) || !navigator.onLine;
+}
+function renderPermissions() {
+  const region = $("permission-list");
+  const selected = new Set(
+    Array.from(
+      region.querySelectorAll<HTMLInputElement>("input:checked"),
+      (el) => el.value,
+    ),
+  );
+  region.replaceChildren();
+  for (const scope of scopes) {
+    const row = document.createElement("label");
+    row.className = "permission-row";
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.value = scope;
+    check.id = `permission-${scope}`;
+    check.setAttribute("aria-label", permissionDetails[scope][0]);
+    check.setAttribute("aria-describedby", `permission-description-${scope}`);
+    check.checked = selected.has(scope);
+    check.disabled =
+      !permissions?.available.includes(scope) ||
+      permissions.granted.includes(scope) ||
+      !!permissions.pending ||
+      permissionBusy ||
+      !navigator.onLine;
+    if (check.disabled) check.checked = false;
+    const detail = document.createElement("span"),
+      title = document.createElement("strong"),
+      description = document.createElement("span");
+    title.textContent = permissionDetails[scope][0];
+    description.id = `permission-description-${scope}`;
+    description.textContent = permissionDetails[scope][1];
+    description.className = "muted small";
+    detail.append(title, description);
+    const state = document.createElement("span");
+    state.className = "permission-state small";
+    state.dataset.scope = scope;
+    state.textContent = !permissions
+      ? "Not connected"
+      : permissions.granted.includes(scope)
+        ? allowed(scope)
+          ? "Granted"
+          : "Granted · unavailable"
+        : permissions.pending?.scopes.includes(scope)
+          ? "Awaiting host"
+          : permissions.available.includes(scope)
+            ? "Not granted"
+            : "Unavailable";
+    check.onchange = updatePermissionButtons;
+    row.append(check, detail, state);
+    region.append(row);
+  }
+  text(
+    "permission-mode",
+    permissions?.mode === "unattended"
+      ? "Unattended host policy"
+      : "Host approval required",
+  );
+  updatePermissionButtons();
+}
+function updatePermissionButtons() {
+  button("permissions-request").disabled =
+    !control ||
+    permissionBusy ||
+    !!permissions?.pending ||
+    !navigator.onLine ||
+    !$("permission-list").querySelector("input:checked");
+  button("permissions-cancel").disabled =
+    !control || permissionBusy || !permissions?.pending || !navigator.onLine;
+}
+function enforcePermissions() {
+  if (!allowed("desktop")) {
+    stopDesktop();
+    screenshotAbort?.abort();
+  }
+  if (!allowed("input")) releaseInput();
+  if (!allowed("shell")) {
+    stopShell();
+    terminal?.clear();
+    $("terminal-empty").hidden = false;
+  }
+  if (transferScope && !allowed(transferScope)) transferAbort?.abort();
+  if (!allowed("file_read")) {
+    $("file-entries").replaceChildren();
+    text("file-count", "0 items");
+  }
+  updateActions();
+}
+function receivePermissions(value: unknown) {
+  const next = parsePermissions(value);
+  if (!acceptPermissions(permissions, next)) return;
+  const previous = permissions;
+  control?.setPermissions(next);
+  permissions = next;
+  if (
+    previous?.granted.includes("clipboard_read") &&
+    !next.granted.includes("clipboard_read")
+  ) {
+    input("clipboard").value = "";
+    text(
+      "clipboard-status",
+      "Host clipboard read permission revoked. Received text was cleared.",
+    );
+  }
+  if (
+    previous?.granted.includes("desktop") &&
+    !next.granted.includes("desktop")
+  )
+    text(
+      "desktop-message",
+      "Desktop access was revoked. Request permission in Session to start another view.",
+    );
+  const decision = next.last_decision;
+  if (
+    decision &&
+    (decision.id !== previous?.last_decision?.id ||
+      decision.outcome !== previous?.last_decision?.outcome)
+  ) {
+    text(
+      "permission-feedback",
+      decision.outcome === "approved"
+        ? "The host approved your request."
+        : decision.outcome === "denied"
+          ? "The host denied your request. You can choose permissions and request again."
+          : "Request cancelled. No additional access was granted.",
+    );
+  } else if (next.pending)
+    text(
+      "permission-feedback",
+      "Waiting for the host to approve. You can cancel this request.",
+    );
+  else if (previous?.granted.some((scope) => !next.granted.includes(scope)))
+    text(
+      "permission-feedback",
+      "The host revoked access. Affected tools and transfers have stopped.",
+    );
+  else if (!previous)
+    text(
+      "permission-feedback",
+      next.granted.length
+        ? "Access follows the host’s current grants."
+        : "Select permissions to ask the host for access.",
+    );
+  enforcePermissions();
+  renderPermissions();
+}
+function refreshCapabilities(): Promise<void> {
+  const owner = requireControl();
+  if (capabilityRefresh?.owner === owner) {
+    capabilityRefresh.dirty = true;
+    return capabilityRefresh.promise;
+  }
+  const current = generation;
+  const refresh = { owner, dirty: false, promise: Promise.resolve() };
+  capabilityRefresh = refresh;
+  refresh.promise = (async () => {
+    do {
+      refresh.dirty = false;
+      const data = object(await owner.call("capabilities"));
+      if (current !== generation || owner !== control) return;
+      const snapshot = parsePermissions(
+        data.permissions ?? (await owner.call("permissions.get")),
+      );
+      if (current !== generation) return;
+      if (!acceptPermissions(permissions, snapshot)) continue;
+      capabilities = data;
+      receivePermissions(snapshot);
+      renderCapabilities(data);
+    } while (refresh.dirty && current === generation);
+  })().finally(() => {
+    if (capabilityRefresh === refresh) capabilityRefresh = undefined;
+  });
+  return refresh.promise;
+}
+$("permissions-form").onsubmit = (event) => {
+  event.preventDefault();
+  if (permissionBusy || permissions?.pending) return;
+  const requested = Array.from(
+    $("permission-list").querySelectorAll<HTMLInputElement>("input:checked"),
+    (el) => el.value,
+  );
+  if (!requested.length) return;
+  const current = generation;
+  permissionBusy = true;
+  renderPermissions();
+  attempt(async () => {
+    try {
+      const snapshot = await requireControl().call("permissions.request", {
+        scopes: requested,
+      });
+      if (current !== generation) return;
+      receivePermissions(snapshot);
+      await refreshCapabilities();
+    } finally {
+      if (current === generation) {
+        permissionBusy = false;
+        renderPermissions();
+      }
+    }
+  });
+};
+button("permissions-cancel").onclick = () => {
+  const id = permissions?.pending?.id,
+    current = generation;
+  if (id === undefined || permissionBusy) return;
+  permissionBusy = true;
+  renderPermissions();
+  attempt(async () => {
+    try {
+      const snapshot = await requireControl().call("permissions.cancel", {
+        id,
+      });
+      if (current !== generation) return;
+      receivePermissions(snapshot);
+      if (
+        permissions?.last_decision?.id === id &&
+        permissions.last_decision.outcome === "cancelled"
+      )
+        text(
+          "permission-feedback",
+          "Request cancelled. No additional access was granted.",
+        );
+    } finally {
+      if (current === generation) {
+        permissionBusy = false;
+        renderPermissions();
+      }
+    }
+  });
+};
 let desktop: MuxStream | undefined,
   inputStream: MuxStream | undefined,
   shell: MuxStream | undefined;
@@ -114,13 +415,7 @@ function status(state: string, label: string) {
   );
 }
 function setConnected(connected: boolean) {
-  document
-    .querySelectorAll<HTMLButtonElement>("[data-connected]")
-    .forEach((el) => {
-      el.disabled = !connected;
-    });
-  input("upload").disabled = !connected;
-  $("upload-label").setAttribute("aria-disabled", String(!connected));
+  updateActions();
   button("disconnect").disabled = !connected && !connecting;
   button("connect").disabled = connected || connecting;
   input("invitation").disabled = connected || connecting;
@@ -147,7 +442,7 @@ function navigate(name: string) {
   });
   text("breadcrumb", name[0].toUpperCase() + name.slice(1));
   if (name === "terminal" && terminal) requestAnimationFrame(() => fit?.fit());
-  if (name === "files" && control) attempt(() => listFiles(path));
+  if (name === "files" && allowed("file_read")) attempt(() => listFiles(path));
 }
 document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((el) => {
   el.onclick = () => navigate(el.dataset.view!);
@@ -160,6 +455,11 @@ function cleanup() {
   generation++;
   connectionAbort?.abort();
   connectionAbort = undefined;
+  transferAbort?.abort();
+  screenshotAbort?.abort();
+  permissions = undefined;
+  capabilities = undefined;
+  permissionBusy = false;
   stopDesktop();
   stopShell();
   control?.close();
@@ -168,17 +468,42 @@ function cleanup() {
   link = undefined;
   old?.close();
   connecting = false;
+  linkHealth = undefined;
   setConnected(false);
-  status("disconnected", "Disconnected");
+  renderNetwork();
   text("capability-status", "Session ended");
   text("room-name", "Not connected");
   $("capabilities").replaceChildren();
+  input("clipboard").value = "";
+  text("clipboard-status", "No clipboard access requested.");
+  $("file-entries").replaceChildren();
+  text("file-count", "0 items");
+  terminal?.clear();
+  $("terminal-empty").hidden = false;
+  renderPermissions();
+  text(
+    "permission-feedback",
+    "Session ended. Connect with a fresh invitation to request access.",
+  );
 }
 $("connect-form").onsubmit = (event) => {
   event.preventDefault();
   if (connecting || link) return;
   attempt(async () => {
+    if (!navigator.onLine)
+      throw new Error(
+        "You are offline. Connect when your network returns, using a fresh invitation.",
+      );
     const invite = parseInvite(input("invitation").value);
+    const invitationKey = `${invite.relay}|${invite.room_id}|${invite.client_token}`;
+    if (consumedInvites.has(invitationKey))
+      throw new Error(
+        "This invitation has already been used. Ask the host for a fresh invitation.",
+      );
+    if (consumedInvites.size >= 64)
+      throw new Error("Reload the workspace before starting another session.");
+    consumedInvites.add(invitationKey);
+    input("invitation").value = "";
     const current = ++generation;
     connectionAbort = new AbortController();
     connecting = true;
@@ -202,6 +527,12 @@ $("connect-form").onsubmit = (event) => {
         return;
       }
       link = connection;
+      connection.onHealth = (health) => {
+        if (current !== generation) return;
+        linkHealth = health;
+        renderNetwork();
+      };
+      linkHealth = connection.health;
       const stream = await connection.open("control");
       if (current !== generation) {
         stream.reset();
@@ -210,6 +541,17 @@ $("connect-form").onsubmit = (event) => {
       control = new Control(
         stream,
         (event, data) => {
+          if (current !== generation) return;
+          if (event === "permissions.changed") {
+            try {
+              receivePermissions(data);
+            } catch (error) {
+              cleanup();
+              showError(error);
+              return;
+            }
+            attempt(refreshCapabilities);
+          }
           if (event === "shell.exit") {
             text("terminal-status", `Shell exited: ${JSON.stringify(data)}`);
           }
@@ -223,11 +565,10 @@ $("connect-form").onsubmit = (event) => {
       );
       connecting = false;
       setConnected(true);
-      status("connected", "Connected");
+      renderNetwork();
       input("invitation").value = "";
-      const capabilities = await control.call("capabilities");
+      await refreshCapabilities();
       if (current !== generation) return;
-      renderCapabilities(capabilities);
       text("capability-status", "Reported by host");
       text(
         "desktop-message",
@@ -247,6 +588,7 @@ function renderCapabilities(value: unknown) {
   const region = $("capabilities");
   region.replaceChildren();
   for (const [key, value] of Object.entries(data)) {
+    if (key === "permissions" || typeof value === "object") continue;
     const item = document.createElement("div");
     item.className = "capability";
     const dot = document.createElement("span");
@@ -273,7 +615,16 @@ function renderCapabilities(value: unknown) {
 
 button("clipboard-get").onclick = () =>
   attempt(async () => {
+    requirePermission("clipboard_read");
+    const current = generation,
+      revision = permissions?.revision;
     const result = await requireControl().call("clipboard.get");
+    if (
+      current !== generation ||
+      revision !== permissions?.revision ||
+      !allowed("clipboard_read")
+    )
+      return;
     const value = typeof result === "string" ? result : object(result).text;
     if (typeof value !== "string")
       throw new Error("Host returned invalid clipboard text");
@@ -282,9 +633,18 @@ button("clipboard-get").onclick = () =>
   });
 button("clipboard-set").onclick = () =>
   attempt(async () => {
+    requirePermission("clipboard_write");
+    const current = generation,
+      revision = permissions?.revision;
     await requireControl().call("clipboard.set", {
       text: input("clipboard").value,
     });
+    if (
+      current !== generation ||
+      revision !== permissions?.revision ||
+      !allowed("clipboard_write")
+    )
+      return;
     text("clipboard-status", "Sent to host.");
   });
 button("clipboard-local").onclick = () =>
@@ -308,7 +668,16 @@ button("clipboard-copy").onclick = () =>
 
 button("refresh-displays").onclick = () =>
   attempt(async () => {
+    requirePermission("desktop");
+    const current = generation,
+      revision = permissions?.revision;
     const result = await requireControl().call("desktop.displays");
+    if (
+      current !== generation ||
+      revision !== permissions?.revision ||
+      !allowed("desktop")
+    )
+      return;
     const displays = Array.isArray(result) ? result : object(result).displays;
     if (!Array.isArray(displays) || !displays.length)
       throw new Error("Host has no available displays");
@@ -335,7 +704,7 @@ function stopDesktop() {
   $("desktop-empty").hidden = false;
   text("desktop-status", "No desktop stream");
   button("desktop-stop").disabled = true;
-  button("desktop-start").disabled = !link;
+  button("desktop-start").disabled = !allowed("desktop");
   input("enable-input").disabled = true;
 }
 async function renderJPEG(bytes: Uint8Array, current: number): Promise<void> {
@@ -359,15 +728,18 @@ async function renderJPEG(bytes: Uint8Array, current: number): Promise<void> {
 }
 button("desktop-start").onclick = () =>
   attempt(async () => {
+    requirePermission("desktop");
     stopDesktop();
     const current = desktopGeneration;
     button("desktop-start").disabled = true;
     text("desktop-status", "Requesting desktop…");
     try {
+      const lowBandwidth =
+        $<HTMLSelectElement>("desktop-bandwidth").value === "low";
       const stream = await requireLink().open("desktop", {
         display: Number(input("display").value),
-        fps: 10,
-        quality: 70,
+        fps: lowBandwidth ? 3 : 10,
+        quality: lowBandwidth ? 40 : 70,
         single: false,
       });
       if (current !== desktopGeneration) {
@@ -385,7 +757,7 @@ button("desktop-start").onclick = () =>
           await renderJPEG(bytes, current);
           frames++;
           if (current === desktopGeneration)
-            input("enable-input").disabled = false;
+            input("enable-input").disabled = !allowed("input");
         }),
       );
       records.finish();
@@ -425,7 +797,13 @@ function saveBlob(blob: Blob, name: string) {
 }
 button("screenshot").onclick = () =>
   attempt(async () => {
+    requirePermission("desktop");
+    if (screenshotAbort) return;
     button("screenshot").disabled = true;
+    const abort = new AbortController();
+    screenshotAbort = abort;
+    const cancel = () => stream?.reset("Screenshot cancelled");
+    abort.signal.addEventListener("abort", cancel, { once: true });
     let stream: MuxStream | undefined;
     try {
       stream = await requireLink().open("desktop", {
@@ -434,6 +812,8 @@ button("screenshot").onclick = () =>
         quality: 90,
         single: true,
       });
+      if (abort.signal.aborted) cancel();
+      abort.signal.throwIfAborted();
       const records = new Records();
       let jpeg: Uint8Array<ArrayBuffer> | undefined;
       await stream.end();
@@ -447,6 +827,8 @@ button("screenshot").onclick = () =>
       records.finish();
       if (!jpeg)
         throw new Error("Desktop unavailable: host sent no screenshot");
+      abort.signal.throwIfAborted();
+      requirePermission("desktop");
       saveBlob(
         new Blob([jpeg], { type: "image/jpeg" }),
         `lightremote-${Date.now()}.jpg`,
@@ -455,7 +837,9 @@ button("screenshot").onclick = () =>
       stream?.reset("Screenshot failed");
       throw error;
     } finally {
-      button("screenshot").disabled = !link;
+      abort.signal.removeEventListener("abort", cancel);
+      if (screenshotAbort === abort) screenshotAbort = undefined;
+      button("screenshot").disabled = !allowed("desktop");
     }
   });
 
@@ -482,13 +866,17 @@ input("enable-input").onchange = () => {
     releaseInput();
     return;
   }
+  if (!allowed("input") || !navigator.onLine) {
+    releaseInput();
+    return;
+  }
   const current = ++inputGeneration;
   attempt(async () => {
     try {
       const stream = await requireLink().open("input", {
         display: Number(input("display").value),
       });
-      if (current !== inputGeneration || !desktop) {
+      if (current !== inputGeneration || !desktop || !allowed("input")) {
         stream.reset();
         return;
       }
@@ -519,6 +907,11 @@ input("enable-input").onchange = () => {
 };
 let pendingInputs = 0;
 function sendInput(value: unknown) {
+  const action = value as { type?: string; down?: boolean };
+  const release =
+    (action.type === "key" || action.type === "button") &&
+    action.down === false;
+  if (!release && (!allowed("input") || !navigator.onLine)) return;
   const stream = inputStream;
   if (!stream) return;
   if (pendingInputs >= 128) {
@@ -529,7 +922,11 @@ function sendInput(value: unknown) {
   pendingInputs++;
   inputWrites = inputWrites
     .then(async () => {
-      if (inputStream === stream) await stream.write(jsonFrame(value));
+      if (
+        inputStream === stream &&
+        (release || (allowed("input") && navigator.onLine))
+      )
+        await stream.write(jsonFrame(value));
     })
     .catch((error) => {
       if (inputStream === stream) {
@@ -669,7 +1066,7 @@ function ensureTerminal() {
   terminal.open($("terminal"));
   fit.fit();
   terminal.onData((data) => {
-    if (shell) {
+    if (shell && allowed("shell") && navigator.onLine) {
       const stream = shell;
       void stream.write(new TextEncoder().encode(data)).catch((error) => {
         if (shell === stream) {
@@ -703,12 +1100,13 @@ function stopShell() {
   shellGeneration++;
   shell?.reset("Terminal closed");
   shell = undefined;
-  button("terminal-start").disabled = !link;
+  button("terminal-start").disabled = !allowed("shell");
   button("terminal-stop").disabled = true;
   text("terminal-status", "No shell running");
 }
 button("terminal-start").onclick = () =>
   attempt(async () => {
+    requirePermission("shell");
     ensureTerminal();
     fit!.fit();
     terminal!.reset();
@@ -736,7 +1134,7 @@ button("terminal-start").onclick = () =>
       if (current === shellGeneration) {
         await stream.end();
         shell = undefined;
-        button("terminal-start").disabled = !link;
+        button("terminal-start").disabled = !allowed("shell");
         button("terminal-stop").disabled = true;
         text("terminal-status", "Shell ended");
       }
@@ -764,7 +1162,16 @@ function bytesLabel(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MiB`;
 }
 async function listFiles(directory: string) {
+  requirePermission("file_read");
+  const current = generation,
+    revision = permissions?.revision;
   const result = await requireControl().call("fs.list", { path: directory });
+  if (
+    current !== generation ||
+    revision !== permissions?.revision ||
+    !allowed("file_read")
+  )
+    return;
   const entries = Array.isArray(result) ? result : object(result).entries;
   if (!Array.isArray(entries) || entries.length > 4096)
     throw new Error("Invalid directory listing");
@@ -797,6 +1204,7 @@ async function listFiles(directory: string) {
     if (type === "file") {
       const get = document.createElement("button");
       get.textContent = "Download";
+      get.dataset.fileScope = "file_read";
       get.setAttribute("aria-label", `Download ${name}`);
       get.onclick = () => attempt(() => downloadFile(childPath(name), name));
       actions.append(get);
@@ -804,13 +1212,24 @@ async function listFiles(directory: string) {
     if (["file", "directory", "dir"].includes(type)) {
       const remove = document.createElement("button");
       remove.textContent = "Remove";
+      remove.dataset.fileScope = "file_write";
+      remove.disabled = !allowed("file_write");
       remove.className = "quiet danger";
       remove.setAttribute("aria-label", `Remove ${name}`);
       remove.onclick = () => {
         if (confirm(`Remove ${name}? Directories must be empty.`))
           attempt(async () => {
+            requirePermission("file_write");
+            const current = generation,
+              revision = permissions?.revision;
             await requireControl().call("fs.remove", { path: childPath(name) });
-            await listFiles(path);
+            if (
+              current !== generation ||
+              revision !== permissions?.revision ||
+              !allowed("file_write")
+            )
+              return;
+            if (allowed("file_read")) await listFiles(path);
           });
       };
       actions.append(remove);
@@ -845,40 +1264,68 @@ button("files-up").onclick = () =>
 $("mkdir-form").onsubmit = (event) => {
   event.preventDefault();
   attempt(async () => {
+    requirePermission("file_write");
+    const current = generation,
+      revision = permissions?.revision;
     await requireControl().call("fs.mkdir", {
       path: childPath(input("folder-name").value),
     });
+    if (
+      current !== generation ||
+      revision !== permissions?.revision ||
+      !allowed("file_write")
+    )
+      return;
     input("folder-name").value = "";
-    await listFiles(path);
+    if (allowed("file_read")) await listFiles(path);
   });
 };
 input("upload").onchange = () => {
   const file = input("upload").files?.[0];
   if (!file) return;
   attempt(async () => {
+    requirePermission("file_write");
     if (fileBusy) throw new Error("Wait for the current transfer to finish");
+    const abort = new AbortController();
+    transferAbort = abort;
+    transferScope = "file_write";
     fileBusy = true;
     input("upload").disabled = true;
     try {
       const receipt = object(
-        await upload(requireLink(), childPath(file.name), file, (n) =>
-          text(
-            "transfer-status",
-            `Uploading ${bytesLabel(n)} / ${bytesLabel(file.size)}`,
-          ),
+        await upload(
+          requireLink(),
+          childPath(file.name),
+          file,
+          (n) =>
+            text(
+              "transfer-status",
+              `Uploading ${bytesLabel(n)} / ${bytesLabel(file.size)}`,
+            ),
+          abort.signal,
         ),
       );
+      abort.signal.throwIfAborted();
       text(
         "transfer-status",
         `Uploaded ${bytesLabel(file.size)} · SHA-256 ${String(receipt.sha256).slice(0, 12)}`,
       );
-      await listFiles(path);
+      if (allowed("file_read")) await listFiles(path);
     } catch (error) {
-      text("transfer-status", "Upload failed");
+      text(
+        "transfer-status",
+        abort.signal.aborted
+          ? "Upload cancelled: session or permission changed"
+          : "Upload failed. Check the host before trying again.",
+      );
       throw error;
     } finally {
       fileBusy = false;
-      input("upload").disabled = !link;
+      if (transferAbort === abort) {
+        transferAbort = undefined;
+        transferScope = undefined;
+      }
+      updateActions();
       input("upload").value = "";
     }
   });
@@ -891,8 +1338,13 @@ interface SaveTarget {
   }>;
 }
 async function downloadFile(remotePath: string, name: string) {
+  requirePermission("file_read");
   if (fileBusy) throw new Error("Wait for the current transfer to finish");
   fileBusy = true;
+  const abort = new AbortController();
+  transferAbort = abort;
+  transferScope = "file_read";
+  updateActions();
   const picker = (
     window as unknown as {
       showSaveFilePicker?: (options: {
@@ -910,7 +1362,9 @@ async function downloadFile(remotePath: string, name: string) {
       remotePath,
       (n) => text("transfer-status", `Downloading ${bytesLabel(n)}`),
       sink,
+      abort.signal,
     );
+    abort.signal.throwIfAborted();
     if (blob) saveBlob(blob, name);
     text("transfer-status", `Downloaded ${name}`);
   } catch (error) {
@@ -918,9 +1372,86 @@ async function downloadFile(remotePath: string, name: string) {
     throw error;
   } finally {
     fileBusy = false;
+    if (transferAbort === abort) {
+      transferAbort = undefined;
+      transferScope = undefined;
+    }
+    updateActions();
   }
 }
-window.addEventListener("pagehide", cleanup);
+function renderNetwork() {
+  $("status").title =
+    linkHealth?.rtt_ms != null
+      ? `Round-trip ${Math.round(linkHealth.rtt_ms)} ms`
+      : "";
+  const offline = !navigator.onLine,
+    weak = linkHealth?.phase === "degraded";
+  $("network-notice").hidden = !offline && !weak;
+  text(
+    "network-notice",
+    offline
+      ? "You are offline. No operations will be retried. A closed session needs a fresh invitation."
+      : "Weak network: responses may be delayed. Remote control has been released. Operations are not retried automatically.",
+  );
+  if (offline) status("offline", "Offline");
+  else if (weak) {
+    releaseInput();
+    status("weak", "Weak network");
+  } else
+    status(
+      link ? "connected" : connecting ? "waiting" : "disconnected",
+      link ? "Connected" : connecting ? "Connecting" : "Disconnected",
+    );
+}
+function networkChanged() {
+  renderNetwork();
+  if (!navigator.onLine) releaseInput();
+  updateActions();
+  renderPermissions();
+}
+window.addEventListener("online", networkChanged);
+window.addEventListener("offline", networkChanged);
+const watchWorkspaceUpdates = () =>
+  watchUpdates({
+    currentVersion: appVersion,
+    online: () => navigator.onLine,
+    onUpdate(version) {
+      text(
+        "update-message",
+        `Workspace ${version} is deployed and ready. Refresh when you are ready.`,
+      );
+      $("update-notice").hidden = false;
+    },
+  });
+let updates = watchWorkspaceUpdates();
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    updates.stop();
+    updates = watchWorkspaceUpdates();
+  }
+});
+button("update-refresh").onclick = () => {
+  if (!navigator.onLine) {
+    showError(new Error("Reconnect to the network before refreshing."));
+    return;
+  }
+  if (
+    !confirm(
+      link || connecting || fileBusy
+        ? "Disconnect this session, cancel any transfers and refresh the workspace? You will need a fresh invitation."
+        : "Refresh the workspace to load the deployed update?",
+    )
+  )
+    return;
+  cleanup();
+  updates.stop();
+  location.reload();
+};
+window.addEventListener("pagehide", () => {
+  cleanup();
+  updates.stop();
+});
+networkChanged();
 if (location.hash.length > 1) {
   input("invitation").value = location.href;
   history.replaceState(null, "", location.pathname + location.search);

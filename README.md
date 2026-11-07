@@ -11,6 +11,11 @@ builds, automated tests, physical desktop checks and signing are tracked separat
 in [CAPABILITIES.md](CAPABILITIES.md). The application profiles are defined in
 [docs/design.md](docs/design.md); they do not extend TMP's wire protocol.
 
+This branch contains unreleased hardening: attended capability requests and
+revocation, network health and low-bandwidth video presets, GitHub release updates,
+and an independent `lightremote-daemon`. The published stable download remains
+v0.1.1; new daemon archives will be included in the next release.
+
 ![LightRemote Web controller](docs/screenshots/web-desktop.png)
 
 ## Downloads
@@ -52,6 +57,23 @@ controller and one session. Disconnect consumes the room; run `host` again for
 a new invitation. Shell, writes, input and clipboard require explicit host flags.
 File access is restricted to the selected share directory. Shell access grants
 the operating-system permissions of the host process.
+
+New hosts require local approval by default. Select capabilities in the controller,
+then use `approve ID [scope ...]`, `deny ID`, or `revoke all` in the host terminal.
+For a deliberately noninteractive policy, pass `--unattended` explicitly. `--stay`
+keeps a host available across sessions with fresh invitations; background hosts
+publish invitations to a private file. `--network slow` increases bounded
+connection/write/RPC budgets; the desktop low-bandwidth preset uses 3 fps/quality40.
+
+Use the independent [daemon](docs/daemon.md) for systemd, launchd or native Windows
+SCM hosting. It is headless by default; Windows session0 does not provide capture
+of the logged-in desktop. [CLI resident hosting](docs/resident-host.md) remains
+available for interactive/user-session hosts.
+
+`lightremote update` checks official GitHub stable releases; add `--install` to
+verify and install. Native controllers check periodically and install only while
+idle. Resident hosts can opt into `--auto-update`; successful installation exits
+75 for their supervisor to restart. See [updates and recovery](docs/updating.md).
 
 For screen capture and input, build with desktop support and enable them:
 
@@ -125,5 +147,8 @@ bash scripts/check.sh
 The Rust workspace's default members exclude the GUI client so a headless host
 can build without GTK/AppKit/Windows UI dependencies. Native platform binaries
 are built in separate CI jobs. All dependency locks are committed.
+
+Next-version hardening and its verification limits are recorded in
+[the hardening review](docs/hardening-review.md).
 
 MIT. See [LICENSE](LICENSE) and [THIRD_PARTY.md](THIRD_PARTY.md).

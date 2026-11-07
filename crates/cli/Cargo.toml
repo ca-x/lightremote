@@ -13,12 +13,17 @@ anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 lightremote-core = { path = "../core" }
 lightremote-services = { path = "../services", default-features = false }
+lightremote-updater = { path = "../updater" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 crossterm = "0.29"
+fs2 = "0.4"
+tempfile = "3"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }
 
 [dev-dependencies]
 lightremote-relay = { path = "../relay" }
 axum = "0.8"
-tempfile = "3"

@@ -1,0 +1,28 @@
+[package]
+name = "lightremote-updater"
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Bounded stable-release updater for lib-x/lightremote"
+repository = "https://github.com/lib-x/lightremote"
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+semver = "1"
+sha2 = "0.10"
+thiserror = "2"
+flate2 = "1"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tempfile = "3"
+fs2 = "0.4"
+tokio = { version = "1", features = ["fs", "io-util", "rt"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

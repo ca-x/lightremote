@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>org.lightremote.host</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/ABSOLUTE/USER/PATH/.local/lib/lightremote-host/run-host.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LIGHTREMOTE_POLICY_CONFIRMED</key><string>no</string>
+    <key>LIGHTREMOTE_BINARY</key><string>/ABSOLUTE/USER/PATH/.local/bin/lightremote</string>
+    <key>LIGHTREMOTE_STATE_DIR</key><string>/ABSOLUTE/USER/PATH/Library/Application Support/LightRemoteHost</string>
+    <key>LIGHTREMOTE_RELAY_URL</key><string>https://relay.example.invalid</string>
+    <key>LIGHTREMOTE_WEB_URL</key><string>https://client.example.invalid/</string>
+    <key>LIGHTREMOTE_RELAY_TOKEN</key><string>REPLACE_WITH_OPERATOR_TOKEN</string>
+    <key>LIGHTREMOTE_SHARE_DIR</key><string></string>
+    <key>LIGHTREMOTE_ALLOW_SHELL</key><string>0</string>
+    <key>LIGHTREMOTE_ALLOW_WRITE</key><string>0</string>
+    <key>LIGHTREMOTE_ALLOW_DESKTOP</key><string>0</string>
+    <key>LIGHTREMOTE_ALLOW_INPUT</key><string>0</string>
+    <key>LIGHTREMOTE_ALLOW_CLIPBOARD</key><string>0</string>
+    <key>LIGHTREMOTE_ALLOW_CLIPBOARD_READ</key><string>0</string>
+    <key>LIGHTREMOTE_ALLOW_CLIPBOARD_WRITE</key><string>0</string>
+    <key>LIGHTREMOTE_AUTO_UPDATE</key><string>0</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ExitTimeOut</key><integer>30</integer>
+  <!-- Decimal 63 = octal 077. Never persist CLI output. -->
+  <key>Umask</key><integer>63</integer>
+  <key>SoftResourceLimits</key><dict><key>Core</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>/dev/null</string>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>

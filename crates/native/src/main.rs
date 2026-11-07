@@ -3,8 +3,10 @@
 mod client;
 mod desktop;
 mod input;
+mod permissions;
 mod surface;
 mod ui;
+mod updates;
 
 #[cfg(target_os = "linux")]
 use nsh_platform_linux as platform;

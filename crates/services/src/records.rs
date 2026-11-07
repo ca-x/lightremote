@@ -13,9 +13,11 @@ pub async fn read_record<R: AsyncRead + Unpin>(
     limit: usize,
     idle: Duration,
 ) -> Result<Option<Vec<u8>>> {
-    // Reading the first byte separately distinguishes clean FIN from a truncated header.
+    // A healthy attended/interactive session may be silent indefinitely. The
+    // carrier owns peer liveness; only a partially started record has an I/O
+    // deadline. Reading the first byte separately still verifies clean FIN.
     let mut header = [0_u8; 4];
-    if timeout(idle, io.read(&mut header[..1])).await?? == 0 {
+    if io.read(&mut header[..1]).await? == 0 {
         return Ok(None);
     }
     timeout(idle, io.read_exact(&mut header[1..])).await??;

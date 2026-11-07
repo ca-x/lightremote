@@ -6,15 +6,18 @@
 | secure-link | Authenticated encrypted records over byte carriers, single-owner TMP driver | app-contract |
 | relay | Room tickets, bounded opaque WebSocket forwarding; Rust/Docker and Cloudflare DO | secure-link carrier contract |
 | host-services | Desktop/input, PTY, sandboxed files, clipboard, screenshots/events | app-contract, secure-link |
+| permissions | Host-owned capability ceiling, attended requests and revocation generations | host-services |
+| updater | Official GitHub stable discovery, digest verification, recovery and session exclusion | GitHub release API |
+| daemon | Independent headless resident host and OS service lifecycle | host-services, permissions, updater |
 | web-client | Browser connection, desktop, terminal, files, clipboard | app-contract, secure-link |
 | native-client | NSH native UI backed by Rust networking and services | app-contract, secure-link |
-| distribution | Reproducible builds, public repository, platform artifacts and relay container | all modules |
+| distribution | Versioned builds, public repository, platform artifacts and relay container | application modules |
 
 Build order: app-contract → secure-link, relay → host-services, web-client → native-client → distribution and end-to-end acceptance.
 
 The owner delegated architecture evaluation to independent agents. Review results and resulting changes are recorded in docs/review.md; no additional human design gate is introduced.
 
-## Platform evidence (2026-11-07)
+## Published v0.1.1 platform evidence (2026-11-07)
 
 `Pending` means no successful evidence recorded yet. CI build success and physical
 runtime verification are different checks. Initial desktop/native artifacts are

@@ -7,12 +7,15 @@
 #[cfg(feature = "desktop")]
 mod desktop;
 mod files;
+pub mod permissions;
 mod records;
 mod shell;
+mod work;
 
 use anyhow::{Context, Result, bail, ensure};
 use cap_std::{ambient_authority, fs::Dir};
 use files::Files;
+use permissions::{ApprovalMode, Permissions, Scope};
 use records::{CONTROL_LIMIT, read_record, write_record};
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -43,6 +46,9 @@ pub struct HostConfig {
     pub allow_desktop: bool,
     pub allow_input: bool,
     pub allow_clipboard: bool,
+    /// Direction-specific alternatives to granting both clipboard operations.
+    pub allow_clipboard_read: bool,
+    pub allow_clipboard_write: bool,
     /// Local shell executable override. Remote metadata cannot set commands.
     pub shell: Option<PathBuf>,
     /// Maximum upload or download size, default 1 GiB.
@@ -61,6 +67,8 @@ impl Default for HostConfig {
             allow_desktop: false,
             allow_input: false,
             allow_clipboard: false,
+            allow_clipboard_read: false,
+            allow_clipboard_write: false,
             shell: None,
             max_file_size: 1024 * 1024 * 1024,
             max_concurrent_streams: 16,
@@ -76,6 +84,8 @@ struct Inner {
     streams: Arc<Semaphore>,
     input: Arc<Semaphore>,
     notifications: broadcast::Sender<Value>,
+    permissions: Permissions,
+    work: work::Work,
     #[cfg(feature = "desktop")]
     clipboard: Arc<std::sync::Mutex<desktop::Clipboard>>,
 }
@@ -86,6 +96,11 @@ pub struct HostServices(Arc<Inner>);
 impl HostServices {
     /// Open the explicit share root once, retaining a capability handle.
     pub fn new(config: HostConfig) -> Result<Self> {
+        Self::with_approval(config, ApprovalMode::Unattended)
+    }
+
+    /// Construct a host with an immutable policy ceiling and session-local grants.
+    pub fn with_approval(config: HostConfig, mode: ApprovalMode) -> Result<Self> {
         ensure!(config.max_file_size > 0, "max_file_size must be positive");
         ensure!(
             (1..=64).contains(&config.max_concurrent_streams),
@@ -102,6 +117,25 @@ impl HostServices {
             })
             .transpose()?;
         let (notifications, _) = broadcast::channel(64);
+        let available = Scope::ALL
+            .into_iter()
+            .filter(|scope| match scope {
+                Scope::Desktop => cfg!(feature = "desktop") && config.allow_desktop,
+                Scope::Input => cfg!(feature = "desktop") && config.allow_input,
+                Scope::Shell => config.allow_shell,
+                Scope::FileRead => files.is_some(),
+                Scope::FileWrite => files.is_some() && config.allow_write,
+                Scope::ClipboardRead => {
+                    cfg!(feature = "desktop")
+                        && (config.allow_clipboard || config.allow_clipboard_read)
+                }
+                Scope::ClipboardWrite => {
+                    cfg!(feature = "desktop")
+                        && (config.allow_clipboard || config.allow_clipboard_write)
+                }
+            })
+            .collect::<Vec<_>>();
+        let permissions = Permissions::new(available, mode);
         Ok(Self(Arc::new(Inner {
             streams: Arc::new(Semaphore::new(config.max_concurrent_streams)),
             config,
@@ -109,9 +143,33 @@ impl HostServices {
             shells: Arc::new(shell::Shells::default()),
             input: Arc::new(Semaphore::new(1)),
             notifications,
+            permissions,
+            work: work::Work::default(),
             #[cfg(feature = "desktop")]
             clipboard: Arc::new(std::sync::Mutex::new(desktop::Clipboard::new())),
         })))
+    }
+
+    /// Local grant authority; never expose this handle to a controller.
+    pub fn permissions(&self) -> Permissions {
+        self.0.permissions.clone()
+    }
+
+    /// Stop admission and wait for real OS work and deferred resource cleanup.
+    /// The caller must first stop dispatching and join its service futures.
+    /// An already-started OS syscall is not preemptible or rolled back.
+    pub async fn shutdown(&self) -> Result<()> {
+        let revoked = self.0.permissions.revoke(&Scope::ALL);
+        self.0.work.shutdown().await;
+        let _all_slots = self
+            .0
+            .streams
+            .acquire_many(self.0.config.max_concurrent_streams as u32)
+            .await
+            .context("service resource tracker closed")?;
+        self.0.shells.shutdown().await;
+        revoked?;
+        Ok(())
     }
 
     /// Bounded event subscription, useful to the mux/session adapter. A slow
@@ -124,33 +182,38 @@ impl HostServices {
     /// Probes never read clipboard content or capture a screen.
     pub async fn capabilities(&self) -> Value {
         let config = &self.0.config;
+        let permissions = self.0.permissions.snapshot();
+        let allows = |scope| permissions.granted.contains(&scope);
         #[cfg(feature = "desktop")]
         let (desktop, input, clipboard) = {
-            let allow_desktop = config.allow_desktop;
-            let allow_input = config.allow_input;
-            let allow_clipboard = config.allow_clipboard;
-            tokio::task::spawn_blocking(move || {
-                let screen = (allow_desktop || allow_input)
-                    && desktop::displays().is_ok_and(|v| {
-                        v["displays"]
-                            .as_array()
-                            .is_some_and(|items| !items.is_empty())
-                    });
-                (
-                    allow_desktop && screen,
-                    allow_input && screen && desktop::probe_input(),
-                    allow_clipboard && desktop::probe_clipboard(),
-                )
-            })
-            .await
-            .unwrap_or((false, false, false))
+            let allow_desktop = allows(Scope::Desktop);
+            let allow_input = allows(Scope::Input);
+            let allow_clipboard = allows(Scope::ClipboardRead) || allows(Scope::ClipboardWrite);
+            self.0
+                .work
+                .run(move |_| {
+                    let screen = (allow_desktop || allow_input)
+                        && desktop::displays().is_ok_and(|v| {
+                            v["displays"]
+                                .as_array()
+                                .is_some_and(|items| !items.is_empty())
+                        });
+                    Ok((
+                        allow_desktop && screen,
+                        allow_input && screen && desktop::probe_input(),
+                        allow_clipboard && desktop::probe_clipboard(),
+                    ))
+                })
+                .await
+                .unwrap_or((false, false, false))
         };
         #[cfg(not(feature = "desktop"))]
         let (desktop, input, clipboard) = (false, false, false);
-        let files = self.0.files.is_some();
-        let write = files && config.allow_write;
+        let files = allows(Scope::FileRead);
+        let write = allows(Scope::FileWrite);
+        let shell = allows(Scope::Shell);
         let mut routes = vec!["control"];
-        if config.allow_shell {
+        if shell {
             routes.push("shell");
         }
         if files {
@@ -166,7 +229,11 @@ impl HostServices {
             routes.push("input");
         }
         json!({"desktop_compiled":cfg!(feature="desktop"),"desktop":desktop,"input":input,
-            "clipboard":clipboard,"shell":config.allow_shell,"files":files,"file_read":files,"file_write":write,
+            "clipboard":clipboard,
+            "clipboard_read":clipboard && allows(Scope::ClipboardRead),
+            "clipboard_write":clipboard && allows(Scope::ClipboardWrite),
+            "shell":shell,"files":files,"file_read":files,"file_write":write,
+            "permissions":permissions,
             "routes":routes,"limits":{"file_size":config.max_file_size,"record":records::FRAME_LIMIT,
                 "control_record":CONTROL_LIMIT,"input_record":records::INPUT_LIMIT,
                 "streams":config.max_concurrent_streams,"shell_processes":shell::PROCESS_LIMIT}})
@@ -179,6 +246,37 @@ impl HostServices {
         route: &str,
         metadata: Value,
         io: impl ServiceIo + 'static,
+    ) -> Result<()> {
+        let scope = match route {
+            "control" => None,
+            "file.get" => Some(Scope::FileRead),
+            "file.put" => Some(Scope::FileWrite),
+            "shell" => Some(Scope::Shell),
+            "desktop" => Some(Scope::Desktop),
+            "input" => Some(Scope::Input),
+            _ => bail!("unknown service route"),
+        };
+        if let Some(scope) = scope {
+            let mut lease = self.0.permissions.lease(&[scope])?;
+            let work = self.0.work.authorized(lease.clone());
+            let service = self.serve_authorized(route, metadata, io, work);
+            tokio::select! {
+                biased;
+                _ = lease.revoked() => bail!("permission revoked"),
+                result = service => result,
+            }
+        } else {
+            self.serve_authorized(route, metadata, io, self.0.work.clone())
+                .await
+        }
+    }
+
+    async fn serve_authorized(
+        &self,
+        route: &str,
+        metadata: Value,
+        io: impl ServiceIo + 'static,
+        work: work::Work,
     ) -> Result<()> {
         let io: BoxServiceIo = Box::new(io);
         ensure!(
@@ -218,9 +316,12 @@ impl HostServices {
                         options,
                         self.0.config.shell.clone(),
                         io,
-                        idle,
-                        self.0.notifications.clone(),
-                        slot.clone(),
+                        shell::Resources {
+                            idle,
+                            notifications: self.0.notifications.clone(),
+                            slot: slot.clone(),
+                            work,
+                        },
                     )
                     .await
             }
@@ -228,7 +329,7 @@ impl HostServices {
                 ensure!(self.0.config.allow_desktop, "desktop is disabled");
                 #[cfg(feature = "desktop")]
                 {
-                    desktop::serve(parse(metadata)?, io, idle, slot.clone()).await
+                    desktop::serve(parse(metadata)?, io, idle, slot.clone(), work).await
                 }
                 #[cfg(not(feature = "desktop"))]
                 {
@@ -245,7 +346,7 @@ impl HostServices {
                     .context("an input stream is already active")?;
                 #[cfg(feature = "desktop")]
                 {
-                    desktop::input(parse(metadata)?, io, idle, slot.clone(), input).await
+                    desktop::input(parse(metadata)?, io, idle, slot.clone(), input, work).await
                 }
                 #[cfg(not(feature = "desktop"))]
                 {
@@ -279,33 +380,50 @@ impl HostServices {
         };
         let id = request.id;
         let method = request.method.as_str();
-        let allowed = match method {
-            "capabilities" => true,
-            "fs.list" => self.0.files.is_some(),
-            "fs.mkdir" | "fs.remove" => self.0.files.is_some() && self.0.config.allow_write,
-            "shell.resize" => self.0.config.allow_shell,
-            "desktop.displays" => {
-                cfg!(feature = "desktop")
-                    && (self.0.config.allow_desktop || self.0.config.allow_input)
+        let scope = match method {
+            "capabilities" | "permissions.get" | "permissions.request" | "permissions.cancel" => {
+                None
             }
-            "clipboard.get" | "clipboard.set" => {
-                cfg!(feature = "desktop") && self.0.config.allow_clipboard
-            }
+            "fs.list" => Some(Scope::FileRead),
+            "fs.mkdir" | "fs.remove" => Some(Scope::FileWrite),
+            "shell.resize" => Some(Scope::Shell),
+            "desktop.displays" => Some(if self.0.permissions.allows(Scope::Desktop) {
+                Scope::Desktop
+            } else {
+                Scope::Input
+            }),
+            "clipboard.get" => Some(Scope::ClipboardRead),
+            "clipboard.set" => Some(Scope::ClipboardWrite),
             _ => return Ok(error(id, "method_not_found", "unknown control method")),
         };
-        if !allowed {
-            return Ok(error(
-                id,
-                "permission_denied",
-                "service is disabled by host policy",
-            ));
-        }
-        let result = self.control_method(method, request.params).await;
+        let result = if let Some(scope) = scope {
+            let Ok(mut lease) = self.0.permissions.lease(&[scope]) else {
+                return Ok(error(
+                    id,
+                    "permission_denied",
+                    "permission has not been granted by the host",
+                ));
+            };
+            let work = self.0.work.authorized(lease.clone());
+            tokio::select! {
+                biased;
+                _ = lease.revoked() => return Ok(error(id, "permission_denied", "permission was revoked by the host")),
+                result = self.control_method(method, request.params, work) => result,
+            }
+        } else {
+            self.control_method(method, request.params, self.0.work.clone())
+                .await
+        };
         Ok(match result {
             Ok(value) => json!({"id":id,"result":value}),
             Err(err) if err.is::<InvalidParams>() => {
                 error(id, "invalid_params", "invalid method parameters")
             }
+            Err(err) if err.is::<permissions::PermissionError>() => error(
+                id,
+                "permission_request_rejected",
+                "permission request is invalid, stale, outside host policy or another request is pending",
+            ),
             Err(_) => error(
                 id,
                 "service_error",
@@ -314,22 +432,45 @@ impl HostServices {
         })
     }
 
-    async fn control_method(&self, method: &str, params: Value) -> Result<Value> {
+    async fn control_method(&self, method: &str, params: Value, work: work::Work) -> Result<Value> {
         match method {
             "capabilities" => {
                 empty_metadata(params)?;
                 Ok(self.capabilities().await)
             }
+            "permissions.get" => {
+                empty_metadata(params)?;
+                Ok(serde_json::to_value(self.0.permissions.snapshot())?)
+            }
+            "permissions.request" => {
+                let options: PermissionRequestOptions = parse(params)?;
+                ensure!(
+                    (1..=Scope::ALL.len()).contains(&options.scopes.len()),
+                    InvalidParams
+                );
+                let scopes = options
+                    .scopes
+                    .iter()
+                    .map(|name| name.parse())
+                    .collect::<std::result::Result<Vec<Scope>, _>>()?;
+                Ok(serde_json::to_value(self.0.permissions.request(&scopes)?)?)
+            }
+            "permissions.cancel" => {
+                let options: PermissionCancelOptions = parse(params)?;
+                Ok(serde_json::to_value(
+                    self.0.permissions.cancel(options.id)?,
+                )?)
+            }
             "fs.list" | "fs.mkdir" | "fs.remove" => {
                 let options: PathOptions = parse(params)?;
                 let files = self.files()?.clone();
                 let method = method.to_string();
-                tokio::task::spawn_blocking(move || match method.as_str() {
+                work.run(move |_| match method.as_str() {
                     "fs.list" => files.list(&options.path),
                     "fs.mkdir" => files.mkdir(&options.path),
                     _ => files.remove(&options.path),
                 })
-                .await?
+                .await
             }
             "shell.resize" => {
                 let options: ResizeOptions = parse(params)?;
@@ -341,7 +482,7 @@ impl HostServices {
                 empty_metadata(params)?;
                 #[cfg(feature = "desktop")]
                 {
-                    tokio::task::spawn_blocking(desktop::displays).await?
+                    work.run(|_| desktop::displays()).await
                 }
                 #[cfg(not(feature = "desktop"))]
                 {
@@ -358,16 +499,17 @@ impl HostServices {
                         None
                     };
                     let clipboard = self.0.clipboard.clone();
-                    tokio::task::spawn_blocking(move || {
+                    work.run(move |access| {
                         let mut clipboard = clipboard
                             .lock()
                             .map_err(|_| anyhow::anyhow!("clipboard unavailable"))?;
+                        access.check()?;
                         match text {
                             Some(text) => clipboard.set(text),
                             None => clipboard.get(),
                         }
                     })
-                    .await?
+                    .await
                 }
                 #[cfg(not(feature = "desktop"))]
                 {
@@ -380,6 +522,7 @@ impl HostServices {
 
     async fn control_stream(&self, io: BoxServiceIo) -> Result<()> {
         let mut events = self.subscribe();
+        let mut permissions = self.0.permissions.subscribe();
         let idle = self.0.config.io_timeout;
         let (mut input, mut output) = tokio::io::split(io);
         // All responses and notifications have one writer; a bounded channel
@@ -405,6 +548,10 @@ impl HostServices {
         let writer = async {
             loop {
                 let message = tokio::select! {
+                    changed=permissions.changed()=>{
+                        changed.context("host permission channel closed")?;
+                        json!({"event":"permissions.changed","data":permissions.borrow_and_update().clone()})
+                    },
                     message=rx.recv()=>match message {Some(message)=>message,None=>break},
                     event=events.recv()=>match event {
                         Ok(event)=>event,
@@ -450,6 +597,16 @@ fn error(id: Value, code: &str, message: &str) -> Value {
 #[serde(deny_unknown_fields)]
 struct PathOptions {
     path: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PermissionRequestOptions {
+    scopes: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PermissionCancelOptions {
+    id: u32,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

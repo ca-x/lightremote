@@ -1,0 +1,31 @@
+[package]
+name = "lightremote-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+desktop = ["lightremote/desktop", "lightremote-services/desktop"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+lightremote = { path = "../cli", default-features = false }
+lightremote-core = { path = "../core" }
+lightremote-services = { path = "../services", default-features = false }
+lightremote-updater = { path = "../updater" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "signal"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
+
+[dev-dependencies]
+fs2 = "0.4"
+tempfile = "3"

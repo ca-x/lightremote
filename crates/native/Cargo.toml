@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 lightremote-core = { path = "../core" }
+lightremote-updater = { path = "../updater" }
 anyhow = "1"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }

@@ -1,10 +1,12 @@
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
-use lightremote_core::{HostTicket, Invite, Room, crypto::Role, link, records};
-use lightremote_services::{HostConfig, HostServices};
+use lightremote::{host, update};
+use lightremote_core::{Invite, crypto::Role, link, records};
+use lightremote_services::{HostConfig, permissions::Scope};
 use serde_json::{Value, json};
-use std::path::PathBuf;
-use tokio::{io::AsyncWriteExt, task::JoinSet};
+use std::{path::PathBuf, time::Duration};
+use tokio::io::AsyncWriteExt;
+mod network;
 
 #[derive(Parser)]
 #[command(
@@ -38,6 +40,25 @@ enum Command {
         #[arg(long)]
         allow_clipboard: bool,
         #[arg(long)]
+        allow_clipboard_read: bool,
+        #[arg(long)]
+        allow_clipboard_write: bool,
+        /// Explicitly grant configured capabilities without local approval prompts.
+        #[arg(long)]
+        unattended: bool,
+        /// Stay available after each session; each attempt creates a fresh invitation.
+        #[arg(long)]
+        stay: bool,
+        /// Atomically publish the current invitation in a private directory.
+        #[arg(long)]
+        invite_file: Option<PathBuf>,
+        /// Check GitHub and install stable updates between sessions; requires --stay.
+        #[arg(long, requires = "stay")]
+        auto_update: bool,
+        /// Increase bounded connection/write budgets on high-latency links.
+        #[arg(long, value_enum, default_value = "standard")]
+        network: network::Profile,
+        #[arg(long)]
         shell: Option<PathBuf>,
         #[arg(long, default_value_t = 1073741824)]
         max_file_size: u64,
@@ -46,8 +67,16 @@ enum Command {
     Connect {
         #[arg(long, env = "LIGHTREMOTE_INVITE", hide_env_values = true)]
         invite: String,
+        #[arg(long, value_enum, default_value = "standard")]
+        network: network::Profile,
         #[command(subcommand)]
         action: Action,
+    },
+    /// Check the official GitHub stable release for this product and architecture.
+    Update {
+        /// Verify and install the update. Active sessions prevent replacement.
+        #[arg(long)]
+        install: bool,
     },
 }
 #[derive(Subcommand)]
@@ -76,15 +105,26 @@ async fn control(
     handle: &lightremote_core::LinkHandle,
     method: &str,
     params: Value,
+    budget: Duration,
+) -> Result<Value> {
+    tokio::time::timeout(budget, control_exchange(handle, method, params))
+        .await
+        .context("control request timed out")?
+}
+async fn control_exchange(
+    handle: &lightremote_core::LinkHandle,
+    method: &str,
+    params: Value,
 ) -> Result<Value> {
     let mut stream = handle.open("control", json!({})).await?;
     records::json(
-        &mut stream.io,
+        &mut stream,
         &json!({"id":1,"method":method,"params":params}),
     )
     .await?;
-    stream.io.shutdown().await?;
-    while let Some(data) = records::read(&mut stream.io, records::MAX_CONTROL).await? {
+    stream.shutdown().await?;
+    let mut result = None;
+    while let Some(data) = records::read(&mut stream, records::MAX_CONTROL).await? {
         let response: Value = serde_json::from_slice(&data)?;
         if response["id"] == 1 {
             ensure!(
@@ -92,10 +132,76 @@ async fn control(
                 "host rejected request: {}",
                 response["error"]
             );
-            return Ok(response["result"].clone());
+            ensure!(result.is_none(), "host sent duplicate control responses");
+            result = Some(response["result"].clone());
         }
     }
-    anyhow::bail!("host closed control stream without response")
+    stream.completed().await?;
+    result.context("host closed control stream without response")
+}
+
+async fn request_permission(
+    handle: &lightremote_core::LinkHandle,
+    scope: Scope,
+    budget: Duration,
+) -> Result<()> {
+    let capabilities = control(handle, "capabilities", json!({}), budget).await?;
+    let Some(permissions) = capabilities.get("permissions") else {
+        return Ok(());
+    };
+    let contains = |value: &Value, key: &str| {
+        value[key].as_array().is_some_and(|scopes| {
+            scopes
+                .iter()
+                .any(|value| value.as_str() == Some(scope.name()))
+        })
+    };
+    if contains(permissions, "granted") {
+        return Ok(());
+    }
+    ensure!(
+        contains(permissions, "available"),
+        "the host does not allow this operation in its local policy"
+    );
+    let requested = control(
+        handle,
+        "permissions.request",
+        json!({"scopes":[scope.name()]}),
+        budget,
+    )
+    .await?;
+    if contains(&requested, "granted") {
+        return Ok(());
+    }
+    let id = requested["pending"]["id"]
+        .as_u64()
+        .context("host did not accept the permission request")?;
+    eprintln!("Waiting for local host approval of {scope}. No operation has started.");
+    let wait = async {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let snapshot = control(handle, "permissions.get", json!({}), budget).await?;
+            if contains(&snapshot, "granted") {
+                return Ok::<_, anyhow::Error>(());
+            }
+            ensure!(
+                snapshot["pending"]["id"].as_u64() == Some(id),
+                "the permission request was denied, cancelled or revoked by the host"
+            );
+        }
+    };
+    let result = tokio::select! {
+        result = tokio::time::timeout(std::time::Duration::from_secs(125), wait) => result.context("host permission approval timed out").and_then(|result| result),
+        signal = tokio::signal::ctrl_c() => { signal?; Err(anyhow::anyhow!("permission request cancelled")) },
+    };
+    if result.is_err() {
+        let _ = tokio::time::timeout(
+            Duration::from_secs(2),
+            control(handle, "permissions.cancel", json!({"id":id}), budget),
+        )
+        .await;
+    }
+    result
 }
 async fn run() -> Result<()> {
     match Args::parse().command {
@@ -109,80 +215,94 @@ async fn run() -> Result<()> {
             allow_desktop,
             allow_input,
             allow_clipboard,
+            allow_clipboard_read,
+            allow_clipboard_write,
+            unattended,
+            stay,
+            invite_file,
+            auto_update,
+            network,
             shell,
             max_file_size,
         } => {
-            // Validate URL before transmitting the operator credential.
-            let probe = Invite {
-                relay: relay.clone(),
-                room_id: "probe".into(),
-                client_token: "probe".into(),
-                secret: base64_key(),
-            };
-            probe.validate()?;
-            let services = HostServices::new(HostConfig {
+            let mut options = host::Options::default();
+            options.relay = relay;
+            options.operator_token = operator_token;
+            options.web_url = web_url;
+            options.unattended = unattended;
+            options.stay = stay;
+            options.invite_file = invite_file;
+            options.auto_update = auto_update;
+            options.network = network.options();
+            options.config = HostConfig {
                 share_dir,
                 allow_shell,
                 allow_write,
                 allow_desktop,
                 allow_input,
                 allow_clipboard,
+                allow_clipboard_read,
+                allow_clipboard_write,
                 shell,
                 max_file_size,
                 ..Default::default()
-            })?;
-            let room: Room = reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()?
-                .post(format!("{}/v1/rooms", relay.trim_end_matches('/')))
-                .bearer_auth(operator_token)
-                .json(&json!({}))
-                .send()
-                .await?
-                .error_for_status()?
-                .json()
-                .await?;
-            let ticket = HostTicket::new(&relay, room)?;
-            println!("INVITE {}", ticket.invite.url(&web_url)?);
-            eprintln!(
-                "Waiting for one controller. Invitation grants the explicitly enabled permissions."
-            );
-            let mut connection =
-                link::connect(&ticket.invite, Role::Host, &ticket.host_token).await?;
-            eprintln!("Encrypted session connected.");
-            let mut workers = JoinSet::new();
-            loop {
-                tokio::select! {
-                    incoming=connection.incoming.recv()=>{
-                        let Some(incoming)=incoming else {break};
-                        let services=services.clone();
-                        workers.spawn(async move {
-                            let route=incoming.route.clone();
-                            let result=lightremote::serve_stream(services,incoming).await;
-                            if result.is_err(){eprintln!("Service stream failed or was cancelled: {route}");}
-                        });
-                    }
-                    result=&mut connection.task=>{result??;break;}
-                    Some(_)=workers.join_next(), if !workers.is_empty()=>{},
-                    _=tokio::signal::ctrl_c()=>break,
-                }
-            }
-            workers.abort_all();
+            };
+            options.config.io_timeout =
+                options.config.io_timeout.max(options.network.write_timeout);
+            host::run(options).await?
         }
-        Command::Connect { invite, action } => {
+
+        Command::Update { install } => {
+            update::run(if install {
+                update::Mode::Install
+            } else {
+                update::Mode::Check
+            })
+            .await?
+        }
+        Command::Connect {
+            invite,
+            network,
+            action,
+        } => {
             let invite = Invite::parse(&invite)?;
-            let connection = link::connect(&invite, Role::Client, &invite.client_token).await?;
+            let gate = lightremote_updater::SessionGate::for_executable(&std::env::current_exe()?)?;
+            let _admission = gate.enter()?;
+            let rpc_budget = network.rpc_budget();
+            let connection = link::connect_with_options(
+                &invite,
+                Role::Client,
+                &invite.client_token,
+                network.options(),
+            )
+            .await?;
+            let scopes = match &action {
+                Action::Capabilities => None,
+                Action::Ls { .. } | Action::Get { .. } => Some(Scope::FileRead),
+                Action::Put { .. } => Some(Scope::FileWrite),
+                Action::Shell => Some(Scope::Shell),
+                Action::Screenshot { .. } => Some(Scope::Desktop),
+            };
+            if let Some(scope) = scopes {
+                request_permission(&connection.handle, scope, rpc_budget).await?;
+            }
             match action {
                 Action::Capabilities => println!(
                     "{}",
                     serde_json::to_string_pretty(
-                        &control(&connection.handle, "capabilities", json!({})).await?
+                        &control(&connection.handle, "capabilities", json!({}), rpc_budget).await?
                     )?
                 ),
                 Action::Ls { path } => println!(
                     "{}",
                     serde_json::to_string_pretty(
-                        &control(&connection.handle, "fs.list", json!({"path":path})).await?
+                        &control(
+                            &connection.handle,
+                            "fs.list",
+                            json!({"path":path}),
+                            rpc_budget
+                        )
+                        .await?
                     )?
                 ),
                 Action::Get { remote, local } => {
@@ -190,26 +310,27 @@ async fn run() -> Result<()> {
                         .handle
                         .open("file.get", json!({"path":remote}))
                         .await?;
-                    stream.io.shutdown().await?;
+                    stream.shutdown().await?;
                     let mut file = tokio::fs::OpenOptions::new()
                         .write(true)
                         .create_new(true)
                         .open(&local)
                         .await?;
-                    match tokio::io::copy(&mut stream.io, &mut file).await {
+                    let transfer = async {
+                        let size = tokio::io::copy(&mut stream, &mut file).await?;
+                        stream.completed().await?;
+                        file.sync_all().await?;
+                        Ok::<_, anyhow::Error>(size)
+                    }
+                    .await;
+                    drop(file);
+                    match transfer {
                         Ok(size) => {
-                            if let Err(error) = stream.completed().await {
-                                drop(file);
-                                let _ = tokio::fs::remove_file(local).await;
-                                return Err(error);
-                            }
-                            file.sync_all().await?;
                             eprintln!("Downloaded {size} bytes.");
                         }
                         Err(error) => {
-                            drop(file);
                             let _ = tokio::fs::remove_file(local).await;
-                            return Err(error.into());
+                            return Err(error);
                         }
                     }
                 }
@@ -220,12 +341,19 @@ async fn run() -> Result<()> {
                         .handle
                         .open("file.put", json!({"path":remote,"size":size}))
                         .await?;
-                    let sent = tokio::io::copy(&mut file, &mut stream.io).await?;
+                    let sent = tokio::io::copy(&mut file, &mut stream).await?;
                     ensure!(sent == size, "local file changed during upload");
-                    stream.io.shutdown().await?;
-                    let receipt = records::read(&mut stream.io, records::MAX_CONTROL)
+                    stream.shutdown().await?;
+                    let receipt = records::read(&mut stream, records::MAX_CONTROL)
                         .await?
                         .context("upload failed before commit receipt")?;
+                    ensure!(
+                        records::read(&mut stream, records::MAX_CONTROL)
+                            .await?
+                            .is_none(),
+                        "host sent multiple upload receipts"
+                    );
+                    stream.completed().await?;
                     println!("{}", String::from_utf8(receipt)?);
                 }
                 Action::Screenshot { output, display } => {
@@ -236,10 +364,17 @@ async fn run() -> Result<()> {
                             json!({"display":display,"fps":1,"quality":85,"single":true}),
                         )
                         .await?;
-                    stream.io.shutdown().await?;
-                    let image = records::read(&mut stream.io, records::MAX_RECORD)
+                    stream.shutdown().await?;
+                    let image = records::read(&mut stream, records::MAX_RECORD)
                         .await?
                         .context("desktop unavailable or screenshot failed")?;
+                    ensure!(
+                        records::read(&mut stream, records::MAX_RECORD)
+                            .await?
+                            .is_none(),
+                        "host sent multiple screenshot frames"
+                    );
+                    stream.completed().await?;
                     let mut file = tokio::fs::OpenOptions::new()
                         .write(true)
                         .create_new(true)
@@ -249,7 +384,7 @@ async fn run() -> Result<()> {
                 }
                 Action::Shell => {
                     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-                    let stream = connection
+                    let mut stream = connection
                         .handle
                         .open("shell", json!({"cols":cols,"rows":rows}))
                         .await?;
@@ -263,34 +398,51 @@ async fn run() -> Result<()> {
                         }
                     }
                     let _raw = Raw(raw);
-                    let (mut reader, mut writer) = tokio::io::split(stream.io);
-                    let upload = async {
-                        tokio::io::copy(&mut tokio::io::stdin(), &mut writer).await?;
-                        writer.shutdown().await?;
-                        Ok::<_, anyhow::Error>(())
-                    };
-                    let download = async {
-                        let mut stdout = tokio::io::stdout();
-                        tokio::io::copy(&mut reader, &mut stdout).await?;
-                        stdout.flush().await?;
-                        Ok::<_, anyhow::Error>(())
-                    };
-                    tokio::pin!(upload, download);
-                    tokio::select! {result=&mut download=>result?,result=&mut upload=>{result?;download.await?;}}
+                    {
+                        let (mut reader, mut writer) = tokio::io::split(&mut stream);
+                        let upload = async {
+                            tokio::io::copy(&mut tokio::io::stdin(), &mut writer).await?;
+                            writer.shutdown().await?;
+                            Ok::<_, anyhow::Error>(())
+                        };
+                        let download = async {
+                            let mut stdout = tokio::io::stdout();
+                            tokio::io::copy(&mut reader, &mut stdout).await?;
+                            stdout.flush().await?;
+                            Ok::<_, anyhow::Error>(())
+                        };
+                        tokio::pin!(upload, download);
+                        tokio::select! {result=&mut download=>result?,result=&mut upload=>{result?;download.await?;}}
+                    }
+                    stream.completed().await?;
                 }
             }
         }
     }
     Ok(())
 }
-fn base64_key() -> String {
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into()
-}
-fn main() -> Result<()> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+fn main() -> std::process::ExitCode {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?;
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("Cannot start runtime: {error}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
     let result = runtime.block_on(run());
     runtime.shutdown_timeout(std::time::Duration::from_millis(100));
-    result
+    match result {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) if error.is::<update::RestartRequired>() => {
+            eprintln!("{error}");
+            std::process::ExitCode::from(75)
+        }
+        Err(error) => {
+            eprintln!("{error:#}");
+            std::process::ExitCode::FAILURE
+        }
+    }
 }

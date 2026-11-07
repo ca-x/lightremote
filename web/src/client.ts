@@ -1,5 +1,21 @@
 import { Link, type MuxStream } from "./link";
 import { Records, jsonFrame, parseJSON } from "./records";
+import {
+  acceptPermissions,
+  parsePermissions,
+  type PermissionSnapshot,
+  type Scope,
+} from "./permissions";
+
+const controlScopes: Record<string, readonly Scope[]> = {
+  "clipboard.get": ["clipboard_read"],
+  "clipboard.set": ["clipboard_write"],
+  "fs.list": ["file_read"],
+  "fs.mkdir": ["file_write"],
+  "fs.remove": ["file_write"],
+  "desktop.displays": ["desktop", "input"],
+  "shell.resize": ["shell"],
+};
 export type Dict = Record<string, unknown>;
 export function object(value: unknown): Dict {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -13,11 +29,25 @@ export class Control {
     {
       resolve(value: unknown): void;
       reject(error: Error): void;
-      timer: ReturnType<typeof setTimeout>;
     }
   >();
   private writes = Promise.resolve();
   private closed = false;
+  private queuedWrites = 0;
+  private permissions?: PermissionSnapshot;
+  private scopeEpochs = new Map<Scope, AbortController>();
+  /** Legacy callers remain compatible until they supply a permission snapshot. */
+  setPermissions(value: unknown): void {
+    const next = parsePermissions(value);
+    if (!acceptPermissions(this.permissions, next)) return;
+    this.permissions = next;
+    for (const [scope, epoch] of this.scopeEpochs) {
+      if (!next.granted.includes(scope)) {
+        this.scopeEpochs.delete(scope);
+        epoch.abort();
+      }
+    }
+  }
   constructor(
     readonly stream: MuxStream,
     private onEvent: (event: string, data: unknown) => void,
@@ -29,13 +59,13 @@ export class Control {
         records.feed(bytes, (bytes) => {
           const message = object(parseJSON(bytes));
           if (typeof message.event === "string") {
+            if (message.event === "permissions.changed")
+              this.setPermissions(message.data);
             this.onEvent(message.event, message.data);
             return;
           }
           const pending = this.pending.get(Number(message.id));
           if (!pending) return;
-          this.pending.delete(Number(message.id));
-          clearTimeout(pending.timer);
           if (message.error) {
             const error = object(message.error);
             pending.reject(
@@ -65,44 +95,121 @@ export class Control {
         }
       });
   }
-  call(method: string, params: unknown = {}): Promise<unknown> {
+  call(
+    method: string,
+    params: unknown = {},
+    options: { signal?: AbortSignal } = {},
+  ): Promise<unknown> {
     if (this.closed) return Promise.reject(new Error("Control stream closed"));
-    if (this.pending.size >= 32)
+    // Cancelled entries still occupy the serialized writer until it advances.
+    if (this.pending.size >= 32 || this.queuedWrites >= 32)
       return Promise.reject(new Error("Too many outstanding requests"));
     const id = this.next++;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`${method} timed out`));
-      }, 15_000);
-      this.pending.set(id, { resolve, reject, timer });
-      const bytes = jsonFrame({ id, method, params });
-      if (bytes.length > 1024 * 1024 + 4) {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(new Error("Control request too large"));
-        return;
+    const signals = new Set<AbortSignal>();
+    if (options.signal) signals.add(options.signal);
+    const candidates = Object.hasOwn(controlScopes, method)
+      ? controlScopes[method]
+      : undefined;
+    if (candidates) {
+      const scope = candidates.find(
+        (scope) =>
+          !this.permissions || this.permissions.granted.includes(scope),
+      );
+      if (!scope)
+        return Promise.reject(
+          new Error("Host permission not granted for control request"),
+        );
+      let epoch = this.scopeEpochs.get(scope);
+      if (!epoch) {
+        epoch = new AbortController();
+        this.scopeEpochs.set(scope, epoch);
       }
+      signals.add(epoch.signal);
+    }
+    const check = () => {
+      if ([...signals].some((signal) => signal.aborted))
+        throw new Error(
+          "Control request cancelled: permission revoked or caller aborted. Already-started operations may have run and will not be retried.",
+        );
+    };
+    let bytes: Uint8Array;
+    try {
+      check();
+      bytes = jsonFrame({ id, method, params });
+      if (bytes.length > 1024 * 1024 + 4)
+        throw new Error("Control request too large");
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    this.queuedWrites++;
+    const response = new Promise<unknown>((resolve, reject) => {
+      const cleanup = () => {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        for (const signal of signals)
+          signal.removeEventListener("abort", abort);
+      };
+      const pending = {
+        resolve(value: unknown) {
+          cleanup();
+          resolve(value);
+        },
+        reject(error: Error) {
+          cleanup();
+          reject(error);
+        },
+      };
+      const abort = () => {
+        try {
+          check();
+        } catch (error) {
+          pending.reject(error as Error);
+        }
+      };
+      const timer = setTimeout(
+        () => pending.reject(new Error(`${method} timed out`)),
+        15_000,
+      );
+      this.pending.set(id, pending);
+      for (const signal of signals)
+        signal.addEventListener("abort", abort, { once: true });
       this.writes = this.writes
         .then(async () => {
-          // Large control records must make progress within the stream queue bound.
-          for (let offset = 0; offset < bytes.length; offset += 65536)
-            await this.stream.write(bytes.subarray(offset, offset + 65536));
-        })
-        .catch((error) => {
-          const pending = this.pending.get(id);
-          if (pending) {
-            clearTimeout(timer);
-            this.pending.delete(id);
-            pending.reject(error);
+          if (!this.pending.has(id) || this.closed) return;
+          check();
+          // Once the first chunk starts, finish the entire record even if revoked.
+          // Dropping a suffix would corrupt framing for unrelated queued requests.
+          // The caller is rejected immediately and late replies are discarded.
+          try {
+            for (let offset = 0; offset < bytes.length; offset += 65536)
+              await this.stream.write(bytes.subarray(offset, offset + 65536));
+          } catch (error) {
+            // A failed write may leave a partial frame. Never append a sibling.
+            if (!this.closed) {
+              const failure =
+                error instanceof Error
+                  ? error
+                  : new Error("Control write failed");
+              this.close(failure);
+              this.onError(failure);
+            }
           }
+        })
+        .catch((error) => this.pending.get(id)?.reject(error))
+        .finally(() => {
+          this.queuedWrites--;
         });
+    });
+    // Also cover a revoke notification coalesced after the reply, before its
+    // promise continuation runs. A later grant never revives this epoch.
+    return response.then((value) => {
+      check();
+      return value;
     });
   }
   private rejectPending(error: Error): void {
     this.closed = true;
     for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
       pending.reject(error);
     }
     this.pending.clear();
@@ -117,8 +224,13 @@ export async function upload(
   path: string,
   file: File,
   progress: (n: number) => void,
+  signal?: AbortSignal,
 ): Promise<unknown> {
+  signal?.throwIfAborted();
   const stream = await link.open("file.put", { path, size: file.size });
+  const abort = () => stream.reset("Upload cancelled");
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
   const records = new Records(1024 * 1024);
   let receipt: unknown,
     count = 0;
@@ -136,16 +248,20 @@ export async function upload(
     });
   void incoming.catch(() => {});
   try {
+    signal?.throwIfAborted();
     let sent = 0;
     for (let offset = 0; offset < file.size; offset += 65536) {
-      await stream.write(
-        new Uint8Array(await file.slice(offset, offset + 65536).arrayBuffer()),
+      const bytes = new Uint8Array(
+        await file.slice(offset, offset + 65536).arrayBuffer(),
       );
+      signal?.throwIfAborted();
+      await stream.write(bytes);
       sent = Math.min(file.size, offset + 65536);
       progress(sent);
     }
     await stream.end();
     await incoming;
+    signal?.throwIfAborted();
     const result = object(receipt);
     if (result.error) throw new Error("Host rejected upload");
     if (
@@ -158,6 +274,8 @@ export async function upload(
   } catch (error) {
     stream.reset("Upload failed");
     throw error;
+  } finally {
+    signal?.removeEventListener("abort", abort);
   }
 }
 /** Browser fallback is explicitly capped. A streaming save target can be supplied by the UI. */
@@ -170,14 +288,21 @@ export async function download(
     close(): Promise<void>;
     abort(): Promise<void>;
   },
+  signal?: AbortSignal,
 ): Promise<Blob | undefined> {
   let stream: MuxStream | undefined;
+  const abort = () => stream?.reset("Download cancelled");
+  signal?.addEventListener("abort", abort, { once: true });
   try {
+    signal?.throwIfAborted();
     stream = await link.open("file.get", { path });
+    if (signal?.aborted) abort();
+    signal?.throwIfAborted();
     await stream.end();
     let received = 0;
     const chunks: Uint8Array<ArrayBuffer>[] = [];
     await stream.process(async (bytes) => {
+      signal?.throwIfAborted();
       received += bytes.length;
       if (sink) await sink.write(bytes);
       else {
@@ -189,11 +314,14 @@ export async function download(
       }
       progress(received);
     });
+    signal?.throwIfAborted();
     if (sink) await sink.close();
     else return new Blob(chunks);
   } catch (error) {
     stream?.reset("Download failed");
     if (sink) await sink.abort().catch(() => {});
     throw error;
+  } finally {
+    signal?.removeEventListener("abort", abort);
   }
 }

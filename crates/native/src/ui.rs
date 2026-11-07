@@ -1,5 +1,8 @@
 //! Native NSH controls; all application data stays on the Rust side.
-use crate::client::{Client, Command, MAX_CLIPBOARD_BYTES, State, validate_clipboard_text};
+use crate::client::{
+    Client, Command, MAX_CLIPBOARD_BYTES, State, VideoPreset, validate_clipboard_text,
+};
+use crate::permissions::Scope;
 use nsh_base::TerminalEvent;
 use nsh_base::{Terminal, TerminalApi, button, input, terminal};
 use nsh_core::element::NativeEvent;
@@ -17,6 +20,154 @@ fn action(label: &'static str, run: impl Fn() + 'static) -> impl IntoElement {
         .bg(rgb(0xe2e8f0))
         .active(|s| s.opacity(0.65))
         .child(text(label).text_color(rgb(0x0f172a)))
+}
+
+fn guarded_action(
+    label: &'static str,
+    disabled: impl Fn() -> bool + 'static,
+    run: impl Fn() + 'static,
+) -> impl IntoElement {
+    button()
+        .disabled(disabled)
+        .on_press(run)
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .bg(rgb(0xe2e8f0))
+        .disabled_style(|s| s.opacity(0.45))
+        .active(|s| s.opacity(0.65))
+        .child(text(label).text_color(rgb(0x0f172a)))
+}
+
+fn permitted_action(
+    label: &'static str,
+    snapshot: Signal<State>,
+    scope: Scope,
+    run: impl Fn() + 'static,
+) -> impl IntoElement {
+    guarded_action(label, move || !snapshot.with(|s| s.allows(scope)), run)
+}
+
+fn permissions_panel(client: Client, snapshot: Signal<State>) -> impl IntoElement {
+    let cancel = client.clone();
+    let mut panel = view().gap_2().child(heading("Permissions")).child(
+        text(move || {
+            snapshot.with(|s| {
+                s.permissions
+                    .as_ref()
+                    .map_or("Connect to load host permissions".to_owned(), |p| {
+                        if p.attended {
+                            "Host approval required · requests never grant access automatically"
+                                .into()
+                        } else {
+                            "Unattended host · access follows the host's configured policy".into()
+                        }
+                    })
+            })
+        })
+        .text_sm(),
+    );
+    panel = panel.child(text("Granted · unavailable means the host allowed access but its backend or route is unavailable. Refresh Capabilities after changing host OS permissions.").text_sm());
+    for scope in Scope::ALL {
+        let request = client.clone();
+        panel = panel.child(
+            view()
+                .flex_row()
+                .gap_2()
+                .child(text(scope.label()).flex_1())
+                .child(text(move || snapshot.with(|s| s.permission_reason(scope))).text_sm())
+                .child(guarded_action(
+                    "Request",
+                    move || {
+                        !snapshot.with(|s| {
+                            s.connected
+                                && s.permissions.as_ref().is_some_and(|p| p.can_request(scope))
+                        })
+                    },
+                    move || request.send(Command::RequestPermission(scope)),
+                )),
+        );
+    }
+    panel
+        .child(text(move || snapshot.with(|s| s.permission_notice.clone())).text_sm())
+        .child(guarded_action(
+            "Cancel pending request",
+            move || {
+                !snapshot.with(|s| {
+                    s.connected && s.permissions.as_ref().is_some_and(|p| p.pending.is_some())
+                })
+            },
+            move || cancel.send(Command::CancelPermission),
+        ))
+}
+
+fn updates_panel(client: Client, snapshot: Signal<State>) -> impl IntoElement {
+    let check = client.clone();
+    let install = client.clone();
+    let automatic = client.clone();
+    let apply = client.clone();
+    let releases = client.clone();
+    let mut controls = view()
+        .flex_row()
+        .gap_2()
+        .child(guarded_action(
+            "Check for updates",
+            move || {
+                snapshot
+                    .with(|s| s.update.checking || s.update.installing || s.update.restart_required)
+            },
+            move || check.send(Command::CheckUpdate),
+        ))
+        .child(guarded_action(
+            "Install update",
+            move || {
+                snapshot.with(|s| {
+                    s.connected
+                        || s.connecting
+                        || s.update.checking
+                        || s.update.installing
+                        || s.update.available.is_none()
+                        || s.update.restart_required
+                })
+            },
+            move || install.send(Command::InstallUpdate),
+        ))
+        .child(action("Toggle automatic checks", move || {
+            automatic.send(Command::AutomaticUpdates(
+                !snapshot.with_untracked(|s| s.update.automatic),
+            ))
+        }))
+        .child(action("Official releases", move || {
+            let client = releases.clone();
+            let url = snapshot.with_untracked(|s| {
+                if s.update.release_url.is_empty() {
+                    "https://github.com/lib-x/lightremote/releases".to_owned()
+                } else {
+                    s.update.release_url.clone()
+                }
+            });
+            spawn(async move {
+                if !open_url(url).await {
+                    client.report("Could not open the official releases in your browser.");
+                }
+            });
+        }));
+    if cfg!(target_os = "windows") {
+        controls = controls.child(guarded_action(
+            "Apply after I quit",
+            move || snapshot.with(|s| !s.update.deferred_ready || s.connected || s.connecting),
+            move || apply.send(Command::ApplyUpdateOnExit),
+        ));
+    }
+    view().gap_2().child(heading("Updates"))
+        .child(text(move || snapshot.with(|s| s.update.message.clone())).text_sm().selectable(true))
+        .child(text(move || snapshot.with(|s| {
+            if s.connected || s.connecting { "Installation unavailable during a session or connection attempt. Disconnect first." }
+            else if s.update.restart_required { "Restart required. Quit and reopen the application when ready." }
+            else { "Checks continue while this window stays open, including after disconnect. Installation never restarts the application." }
+        })).text_sm())
+        .child(controls)
+        .child(text(move || snapshot.with(|s| if s.update.automatic { "Automatic checks: on · every 6 hours" } else { "Automatic checks: off · manual checks remain available" })).text_sm())
 }
 
 fn field(value: Signal<String>, placeholder: &'static str) -> impl IntoElement {
@@ -71,6 +222,7 @@ pub fn App() -> impl IntoElement {
     let clipboard_copy = client.clone();
     let invitation = signal(String::new());
     let display = signal("0".to_owned());
+    let video_preset = signal(VideoPreset::default());
     let terminal_ref = component_ref::<Terminal>();
     let terminal_offset = Cell::new((u64::MAX, 0_u64));
     effect(move || {
@@ -142,23 +294,30 @@ pub fn App() -> impl IntoElement {
             view().gap_3().p_5().text_color(rgb(0x0f172a))
                 .child(text("LightRemote").text_2xl().font_weight(FontWeight::SEMIBOLD))
                 .child(text(move || snapshot.with(|s| s.status.clone())).selectable(true))
+                .child(text(move || snapshot.with(|s| s.network.clone())).text_sm())
                 .child(text(move || snapshot.with(|s| s.error.clone())).text_color(rgb(0xb91c1c)).selectable(true))
                 .child(view().flex_row().gap_2()
                     .child(field(invitation, "Paste invitation URL or fragment"))
-                    .child(action("Connect", move || {
+                    .child(guarded_action("Connect", move || snapshot.with(|s| s.connected || s.connecting || s.update.installing || s.update.restart_required), move || {
                         connect.send(Command::Connect(invitation.get_untracked()));
                         invitation.set(String::new());
                     }))
-                    .child(action("Disconnect", move || disconnect.send(Command::Disconnect))))
+                    .child(guarded_action("Disconnect", move || snapshot.with(|s| !s.connected && !s.connecting), move || disconnect.send(Command::Disconnect))))
                 .child(view().flex_row().gap_2()
                     .child(action("Capabilities", move || caps.send(Command::Capabilities)))
-                    .child(action("Displays", move || displays.send(Command::Displays))))
-                .child(text(move || snapshot.with(|s| s.capabilities.clone())).text_sm().selectable(true))
+                    .child(permitted_action("Displays", snapshot, Scope::Desktop, move || displays.send(Command::Displays))))
+                .child(text(move || snapshot.with(|s| s.capabilities.clone())).text_sm())
+                .child(permissions_panel(client.clone(), snapshot))
+                .child(updates_panel(client.clone(), snapshot))
                 .child(heading("Desktop"))
                 .child(view().flex_row().gap_2()
+                    .child(preset_action("Standard · 10 fps / quality 70", VideoPreset::Standard, video_preset))
+                    .child(preset_action("Low bandwidth · 3 fps / quality 40", VideoPreset::LowBandwidth, video_preset)))
+                .child(text("Video preset applies only to the next Start desktop. Changing it does not restart the active stream. Screenshots use quality 85.").text_sm())
+                .child(view().flex_row().gap_2()
                     .child(field(display, "Display ID"))
-                    .child(action("Start desktop", move || start_desktop(&desktop, display, false)))
-                    .child(action("Screenshot", move || start_desktop(&screenshot, display, true)))
+                    .child(permitted_action("Start desktop", snapshot, Scope::Desktop, move || start_desktop(&desktop, display, video_preset.get_untracked(), false)))
+                    .child(permitted_action("Screenshot", snapshot, Scope::Desktop, move || start_desktop(&screenshot, display, video_preset.get_untracked(), true)))
                     .child(action("Stop", move || stop_desktop.send(Command::StopDesktop))))
                 .child(text("Click the image to control. Moving focus away releases all keys/buttons. Host applies the selected display offset.").text_sm())
                 .child(desktop_surface(client.clone(), snapshot))
@@ -167,10 +326,16 @@ pub fn App() -> impl IntoElement {
                     .child(action("Save image", move || save_image.send(Command::SaveScreenshot(PathBuf::from(screenshot_path.get_untracked()))))))
                 .child(view().flex_row().gap_2()
                     .child(field(remote_text, "Text to type on the remote desktop"))
-                    .child(action("Send text", move || {
-                        send_text.send(Command::Text(remote_text.get_untracked()));
-                        remote_text.set(String::new());
+                    .child(permitted_action("Send text", snapshot, Scope::Input, move || {
+                        match display.get_untracked().parse() {
+                            Ok(display) => {
+                                send_text.send(Command::Text { display, text: remote_text.get_untracked() });
+                                remote_text.set(String::new());
+                            }
+                            Err(_) => send_text.report("Enter a valid non-negative Display ID before sending text."),
+                        }
                     })))
+                .child(text("Input permission is independent of desktop viewing. Text uses the selected Display ID and requires the host's working input backend.").text_sm())
                 .child(heading("Clipboard"))
                 .child(text("Explicit text transfer only · 256 KiB maximum · Read remote replaces the editor; it does not change your local clipboard.").text_sm())
                 .child(input().multiline(true).value(move || clipboard_draft.get())
@@ -184,8 +349,8 @@ pub fn App() -> impl IntoElement {
                     .placeholder("Read remote clipboard, paste local text, or type here")
                     .w_full().h(px(140.0)).px_3().py_2().border_1().border_color(rgb(0x94a3b8)).rounded_md())
                 .child(view().flex_row().gap_2()
-                    .child(action("Read remote", move || clipboard_read.send(Command::ClipboardGet)))
-                    .child(action("Write remote", move || clipboard_write.send(Command::ClipboardSet(clipboard_draft.get_untracked()))))
+                    .child(permitted_action("Read remote", snapshot, Scope::ClipboardRead, move || clipboard_read.send(Command::ClipboardGet)))
+                    .child(permitted_action("Write remote", snapshot, Scope::ClipboardWrite, move || clipboard_write.send(Command::ClipboardSet(clipboard_draft.get_untracked()))))
                     .child(action("Paste local", move || {
                         let client = clipboard_paste.clone();
                         spawn(async move {
@@ -206,9 +371,9 @@ pub fn App() -> impl IntoElement {
                 .child(heading("Shell"))
                 .child(text("NSH VT terminal · click to type · scrollback 1000 lines").text_sm())
                 .child(view().flex_row().gap_2()
-                    .child(action("Open shell", move || open_shell.send(Command::OpenShell)))
+                    .child(permitted_action("Open shell", snapshot, Scope::Shell, move || open_shell.send(Command::OpenShell)))
                     .child(action("Close shell", move || close_shell.send(Command::CloseShell)))
-                    .child(action("Ctrl+C", move || interrupt.send(Command::Shell(vec![3])))))
+                    .child(permitted_action("Ctrl+C", snapshot, Scope::Shell, move || interrupt.send(Command::Shell(vec![3])))))
                 .child(terminal().component_ref(&terminal_ref).scrollback(1000)
                     .on_data(move |data: &SharedString| shell_keys.send(Command::Shell(data.as_bytes().to_vec())))
                     .on_resize(move |event: &TerminalEvent| { if let TerminalEvent::Resize(cols, rows) = event { terminal_size.set(((*cols).clamp(1,1000) as u16, (*rows).clamp(1,1000) as u16)); } })
@@ -217,13 +382,13 @@ pub fn App() -> impl IntoElement {
                 .child(text("Paths on the host are relative to its shared directory. Downloads never overwrite local files.").text_sm())
                 .child(view().flex_row().gap_2()
                     .child(field(remote_path, "Remote relative path"))
-                    .child(action("List", move || list.send(Command::List(remote_path.get_untracked())))))
+                    .child(permitted_action("List", snapshot, Scope::FileRead, move || list.send(Command::List(remote_path.get_untracked())))))
                 .child(view().flex_row().gap_2()
                     .child(field(local_path, "Local file path"))
-                    .child(action("Download", move || download.send(Command::Download {
+                    .child(permitted_action("Download", snapshot, Scope::FileRead, move || download.send(Command::Download {
                         remote: remote_path.get_untracked(), local: PathBuf::from(local_path.get_untracked()),
                     })))
-                    .child(action("Upload", move || upload.send(Command::Upload {
+                    .child(permitted_action("Upload", snapshot, Scope::FileWrite, move || upload.send(Command::Upload {
                         remote: remote_path.get_untracked(), local: PathBuf::from(local_path.get_untracked()),
                     }))))
                 .child(text(move || snapshot.with(|s| s.listing.clone())).text_sm().selectable(true))
@@ -231,9 +396,34 @@ pub fn App() -> impl IntoElement {
     ).into_element()
 }
 
-fn start_desktop(client: &Client, display: Signal<String>, single: bool) {
+fn preset_action(
+    label: &'static str,
+    preset: VideoPreset,
+    selected: Signal<VideoPreset>,
+) -> impl IntoElement {
+    button()
+        .selected(move || selected.get() == preset)
+        .on_press(move || selected.set(preset))
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .bg(move || {
+            if selected.get() == preset {
+                rgb(0xcbd5e1)
+            } else {
+                rgb(0xe2e8f0)
+            }
+        })
+        .child(text(label).text_color(rgb(0x0f172a)))
+}
+
+fn start_desktop(client: &Client, display: Signal<String>, preset: VideoPreset, single: bool) {
     match display.get_untracked().parse() {
-        Ok(display) => client.send(Command::Desktop { display, single }),
+        Ok(display) => client.send(Command::Desktop {
+            display,
+            preset,
+            single,
+        }),
         Err(_) => client.report(
             "Display ID must be a non-negative integer. Use Displays to query available IDs.",
         ),
@@ -274,7 +464,7 @@ fn desktop_surface(client: Client, snapshot: Signal<State>) -> impl IntoElement 
                 _ => {}
             }
             let Some(display) = snapshot.with_untracked(|s| {
-                if s.connected && !s.desktop.is_empty() {
+                if s.allows(Scope::Input) && !s.desktop.is_empty() {
                     s.display
                 } else {
                     None

@@ -22,6 +22,11 @@ import { Records, jsonFrame, parseJSON } from "../src/records";
 const profiles = ["control", "desktop", "input", "shell", "file"].map(
   (n) => `lightremote.${n}.v1`,
 );
+import {
+  scopes,
+  type Scope,
+  type PermissionSnapshot,
+} from "../src/permissions";
 const enc = new TextEncoder();
 interface State {
   route: string;
@@ -43,8 +48,65 @@ export class HostFixture {
     ["large.bin", new Uint8Array(700000).map((_, i) => i % 251)],
   ]);
   readonly inputs: unknown[] = [];
+  readonly desktopRequests: {
+    display: number;
+    fps: number;
+    quality: number;
+    single: boolean;
+  }[] = [];
   readonly calls: { method: string; params: Record<string, unknown> }[] = [];
   readonly errors: Error[] = [];
+  permissions: PermissionSnapshot = {
+    available: [...scopes],
+    granted: [...scopes],
+    pending: null,
+    last_decision: null,
+    revision: 0,
+    mode: "unattended",
+  };
+  private nextRequest = 1;
+  private permissionSenders = new Set<() => void>();
+  setAttended() {
+    this.permissions = {
+      ...this.permissions,
+      granted: [],
+      mode: "attended",
+      revision: this.permissions.revision + 1,
+    };
+  }
+  approve() {
+    this.setPermissions(
+      [
+        ...new Set([
+          ...this.permissions.granted,
+          ...(this.permissions.pending?.scopes ?? []),
+        ]),
+      ],
+      "approved",
+    );
+  }
+  deny() {
+    this.setPermissions(this.permissions.granted, "denied");
+  }
+  revoke(scopes: Scope[]) {
+    this.setPermissions(
+      this.permissions.granted.filter((scope) => !scopes.includes(scope)),
+    );
+  }
+  private setPermissions(granted: Scope[], outcome?: "approved" | "denied") {
+    const decision =
+      outcome && this.permissions.pending
+        ? { id: this.permissions.pending.id, outcome }
+        : this.permissions.last_decision;
+    this.permissions = {
+      ...this.permissions,
+      granted,
+      last_decision: decision,
+      pending: null,
+      revision: this.permissions.revision + 1,
+    };
+    for (const send of this.permissionSenders) send();
+  }
   withholdCredit = false;
   holdPongs = false;
   pings = 0;
@@ -191,11 +253,19 @@ export class HostFixture {
     };
     this.controlEnders.add(endControl);
     const reply = (id: number, value: unknown) => queue(id, jsonFrame(value));
+    const permissionsChanged = () => {
+      for (const [id, state] of states)
+        if (state.route === "control")
+          reply(id, { event: "permissions.changed", data: this.permissions });
+      pump();
+    };
+    this.permissionSenders.add(permissionsChanged);
     const event = async (event: Event) => {
       if (event.type === "open") {
         const metadata = JSON.parse(
           new TextDecoder().decode(event.open.metadata),
         );
+        if (event.open.route === "desktop") this.desktopRequests.push(metadata);
         if (event.open.route === "desktop" && !this.desktopJPEG) {
           send(
             session.reset(
@@ -234,17 +304,70 @@ export class HostFixture {
             };
             this.calls.push(message);
             let result: unknown = {};
+            const granted = (scope: Scope) =>
+              this.permissions.granted.includes(scope);
             if (message.method === "capabilities")
               result = {
-                shell: true,
-                files: true,
-                file_read: true,
-                file_write: true,
-                desktop: !!this.desktopJPEG,
-                input: !!this.desktopJPEG,
-                clipboard: true,
+                ...Object.fromEntries(
+                  scopes.map((scope) => [scope, granted(scope)]),
+                ),
+                files: granted("file_read"),
+                clipboard:
+                  granted("clipboard_read") || granted("clipboard_write"),
+                permissions: this.permissions,
+                routes: [
+                  "control",
+                  ...(granted("desktop") ? ["desktop"] : []),
+                  ...(granted("input") ? ["input"] : []),
+                  ...(granted("shell") ? ["shell"] : []),
+                  ...(granted("file_read") ? ["file.get"] : []),
+                  ...(granted("file_write") ? ["file.put"] : []),
+                ],
               };
-            else if (message.method === "fs.list")
+            else if (message.method === "permissions.get")
+              result = this.permissions;
+            else if (message.method === "permissions.request") {
+              const requested = message.params.scopes as Scope[];
+              if (
+                this.permissions.pending ||
+                !Array.isArray(requested) ||
+                !requested.length ||
+                requested.some(
+                  (scope) => !this.permissions.available.includes(scope),
+                )
+              ) {
+                reply(event.id, {
+                  id: message.id,
+                  error: {
+                    code: "invalid",
+                    message: "Invalid permission request",
+                  },
+                });
+                return;
+              }
+              this.permissions = {
+                ...this.permissions,
+                pending: { id: this.nextRequest++, scopes: requested },
+                last_decision: null,
+                revision: this.permissions.revision + 1,
+              };
+              result = this.permissions;
+            } else if (message.method === "permissions.cancel") {
+              if (
+                this.permissions.pending &&
+                this.permissions.pending.id === message.params.id
+              )
+                this.permissions = {
+                  ...this.permissions,
+                  last_decision: {
+                    id: this.permissions.pending.id,
+                    outcome: "cancelled",
+                  },
+                  pending: null,
+                  revision: this.permissions.revision + 1,
+                };
+              result = this.permissions;
+            } else if (message.method === "fs.list")
               result = {
                 entries: [...this.files].map(([name, bytes]) => ({
                   name,
@@ -362,6 +485,7 @@ export class HostFixture {
     socket.on("close", () => {
       this.goawaySenders.delete(goaway);
       this.controlEnders.delete(endControl);
+      this.permissionSenders.delete(permissionsChanged);
       session.close();
       tx?.destroy();
       rx?.destroy();

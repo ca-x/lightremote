@@ -59,6 +59,7 @@ try {
     cli,
     [
       "host",
+      "--unattended",
       "--relay",
       origin,
       "--web-url",
@@ -163,9 +164,15 @@ try {
     });
   await expect(page.locator("#transfer-status")).toContainText("Uploaded");
   expect(await readFile(resolve(share, "uploaded.bin"))).toEqual(uploaded);
+  await page.getByRole("button", { name: /^Session/ }).click();
+  await expect(page.locator("#permission-desktop")).toBeDisabled();
+  await expect(page.locator("#permission-desktop").locator(".."))
+    .toContainText("Unavailable");
   await page.getByRole("button", { name: /^Desktop/ }).click();
-  await page.getByRole("button", { name: "Start view", exact: true }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start view", exact: true }))
+    .toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save screenshot", exact: true }))
+    .toBeDisabled();
   await expect(page.locator("#desktop-canvas")).toBeHidden();
   await page.screenshot({
     path: resolve(artifacts, "rust-headless-desktop.png"),
@@ -175,7 +182,7 @@ try {
   await expect(page.locator("#status-label")).toHaveText("Disconnected");
   expect(errors).toEqual([]);
   console.log(
-    "PASS: real Chromium → Rust relay → encrypted TMP Rust host: PTY output, resize, upload, download, and truthful headless desktop error.",
+    "PASS: real Chromium → Rust relay → encrypted TMP Rust host: PTY output, resize, upload, download, and unavailable headless desktop permissions.",
   );
 } finally {
   await browser?.close();

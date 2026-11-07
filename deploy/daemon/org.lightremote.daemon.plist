@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>org.lightremote.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/lightremote-daemon</string>
+    <string>--config</string><string>/Library/Application Support/LightRemote/daemon.json</string>
+  </array>
+  <key>UserName</key><string>_lightremote</string>
+  <key>WorkingDirectory</key><string>/Library/Application Support/LightRemote</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>5</integer>
+  <key>ExitTimeOut</key><integer>45</integer>
+  <key>Umask</key><integer>63</integer>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>/var/log/lightremote-daemon.log</string>
+</dict>
+</plist>

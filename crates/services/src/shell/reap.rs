@@ -1,5 +1,6 @@
 //! A fixed-size fallback supervisor owns children that miss the cleanup deadline.
 //! No service permit or per-child waiting thread is retained by this supervisor.
+//! A session cleanup token remains owned until the child is actually reaped.
 use super::{ExitReporter, report_exit};
 use anyhow::{Context, Result};
 use portable_pty::Child;
@@ -8,6 +9,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio_util::task::task_tracker::TaskTrackerToken;
 
 pub(super) const PROCESS_LIMIT: usize = 64;
 type Process = Box<dyn Child + Send + Sync>;
@@ -15,6 +17,7 @@ struct Pending {
     child: Process,
     reporter: Option<ExitReporter>,
     _permit: OwnedSemaphorePermit,
+    _cleanup: Option<TaskTrackerToken>,
 }
 struct Reaper {
     slots: Arc<Semaphore>,
@@ -54,11 +57,17 @@ impl Lease {
         })
     }
 
-    pub fn defer(self, child: Process, reporter: Option<ExitReporter>) {
+    pub fn defer(
+        self,
+        child: Process,
+        reporter: Option<ExitReporter>,
+        cleanup: Option<TaskTrackerToken>,
+    ) {
         let pending = Pending {
             child,
             reporter,
             _permit: self.permit,
+            _cleanup: cleanup,
         };
         // One reserved permit per live shell or pending child proves there are
         // fewer than PROCESS_LIMIT queued jobs when this one is submitted.

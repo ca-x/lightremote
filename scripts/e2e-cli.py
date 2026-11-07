@@ -11,7 +11,7 @@ with tempfile.TemporaryDirectory() as share,tempfile.TemporaryDirectory() as loc
    try:urllib.request.urlopen(f'http://127.0.0.1:{port}/healthz',timeout=1);break
    except:time.sleep(.05)
   def run(action,input=None):
-   host=subprocess.Popen([bin+'lightremote','host','--relay',f'http://127.0.0.1:{port}','--share-dir',share,'--allow-write','--allow-shell'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+   host=subprocess.Popen([bin+'lightremote','host','--unattended','--relay',f'http://127.0.0.1:{port}','--share-dir',share,'--allow-write','--allow-shell'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
    try:
     invite=host.stdout.readline().strip().removeprefix('INVITE ')
     assert invite.startswith('http'),host.stderr.read()

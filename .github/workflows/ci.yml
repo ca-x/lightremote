@@ -31,15 +31,20 @@ jobs:
           rustup default stable
       - run: bash scripts/check.sh rust
       - name: Build real headless integration binaries
-        run: cargo build --locked --no-default-features -p lightremote -p lightremote-relay
+        run: cargo build --locked --no-default-features -p lightremote -p lightremote-relay -p lightremote-daemon
       - name: Verify CLI PTY and file session
         run: python3 scripts/e2e-cli.py
+      - name: Verify attended permissions and resident host recovery
+        run: python3 scripts/e2e-host.py
+      - name: Verify independent daemon encrypted sessions
+        run: python3 crates/daemon/tests/e2e.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-binaries
           path: |
             target/debug/lightremote
             target/debug/lightremote-relay
+            target/debug/lightremote-daemon
           if-no-files-found: error
           retention-days: 3
 

@@ -58,11 +58,16 @@ jobs:
         run: cargo build --locked --release --target "$TARGET" -p lightremote-native
       - name: Build headless CLI without desktop dependencies
         run: cargo build --locked --release --target "$TARGET" --target-dir target/headless -p lightremote --no-default-features
+      - name: Build independent headless host daemon
+        run: cargo build --locked --release --target "$TARGET" --target-dir target/headless -p lightremote-daemon --no-default-features
+      - name: Verify Windows service installer trust checks without registration
+        if: runner.os == 'Windows'
+        run: cargo test --locked --release --target "$TARGET" --target-dir target/headless -p lightremote-daemon --no-default-features --test windows_installer -- --nocapture
       - name: Package unsigned binaries
         run: |
           version="dev-$RELEASE_SHA"
           if [[ "$RELEASE_REF_TYPE" == tag ]]; then version="$RELEASE_REF"; fi
-          python3 scripts/release.py binaries --version "$version" --target "$TARGET" --binary-dir "target/$TARGET/release" --headless-dir "target/headless/$TARGET/release" --output dist
+          python3 scripts/release.py binaries --version "$version" --target "$TARGET" --binary-dir "target/$TARGET/release" --headless-dir "target/headless/$TARGET/release" --daemon-dir "target/headless/$TARGET/release" --output dist
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ matrix.target }}

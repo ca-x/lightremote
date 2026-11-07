@@ -4,6 +4,10 @@ use lightremote_core::IncomingStream;
 use lightremote_services::HostServices;
 use serde_json::json;
 
+mod approval;
+pub mod host;
+pub mod update;
+
 /// Bind host-owned stream identity and cancellation to one application service.
 /// RESET cancels a service even after its input FIN, while successful completion
 /// alone authorizes the runtime to emit the response's final FIN.

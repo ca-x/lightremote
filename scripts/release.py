@@ -19,7 +19,7 @@ TARGETS = (
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
 )
-COMPONENTS = ("lightremote", "lightremote-headless", "lightremote-native", "lightremote-relay")
+COMPONENTS = ("lightremote", "lightremote-headless", "lightremote-native", "lightremote-relay", "lightremote-daemon")
 NOTICE = """LightRemote unsigned distribution
 
 These binaries are not signed by the publisher. Windows builds have no
@@ -32,6 +32,7 @@ Desktop CLI: lightremote (default Cargo features).
 Headless CLI: lightremote built with --no-default-features, in a separate archive.
 Native controller: lightremote-native, built from NSH source.
 Relay: lightremote-relay. Web: compiled browser assets in the web archive.
+Daemon: lightremote-daemon, a separate headless host service with OS lifecycle support.
 Linux GNU builds need a compatible glibc. Desktop/native builds additionally
 need the system libraries described in docs/distribution.md in the source tree.
 """
@@ -68,7 +69,7 @@ def write_archive(destination: Path, root: str, files: list[tuple[Path, str]], e
             archive.addfile(notice, io.BytesIO(data))
             for source, name in files:
                 entry = archive.gettarinfo(str(source), f"{root}/{name}")
-                entry.mode = 0o755 if executable and name in ("lightremote","lightremote-native","lightremote-relay") else 0o644
+                entry.mode = 0o755 if executable and name in ("lightremote","lightremote-native","lightremote-relay","lightremote-daemon") else 0o644
                 entry.uid = entry.gid = 0
                 entry.uname = entry.gname = ""
                 with source.open("rb") as stream:
@@ -82,6 +83,7 @@ def package_binaries(args: argparse.Namespace) -> None:
         "lightremote-headless": (args.headless_dir / f"lightremote{extension}", f"lightremote{extension}"),
         "lightremote-native": (args.binary_dir / f"lightremote-native{extension}", f"lightremote-native{extension}"),
         "lightremote-relay": (args.binary_dir / f"lightremote-relay{extension}", f"lightremote-relay{extension}"),
+        "lightremote-daemon": (args.daemon_dir / f"lightremote-daemon{extension}", f"lightremote-daemon{extension}"),
     }
     for source, _ in binaries.values():
         if not source.is_file():
@@ -89,7 +91,17 @@ def package_binaries(args: argparse.Namespace) -> None:
     for component, (source, filename) in binaries.items():
         root = f"{component}-{args.version}-{args.target}"
         destination = args.output / archive_name(component, args.version, args.target)
-        write_archive(destination, root, [(source, filename)], executable=True)
+        files = [(source, filename)]
+        if component == "lightremote-daemon":
+            repo = Path(__file__).resolve().parent.parent
+            files.extend((repo / name, name) for name in (
+                "docs/daemon.md", "docs/updating.md",
+                "deploy/daemon/daemon.example.json",
+                "deploy/daemon/lightremote-daemon.service",
+                "deploy/daemon/org.lightremote.daemon.plist",
+                "deploy/daemon/windows-service.ps1",
+            ))
+        write_archive(destination, root, files, executable=True)
         print(destination)
 
 
@@ -145,11 +157,12 @@ def validate_tag(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    binaries = commands.add_parser("binaries", help="archive four compiled binaries for one target")
+    binaries = commands.add_parser("binaries", help="archive five compiled binaries for one target")
     binaries.add_argument("--version", required=True, type=version_name)
     binaries.add_argument("--target", required=True, choices=TARGETS)
     binaries.add_argument("--binary-dir", required=True, type=Path)
     binaries.add_argument("--headless-dir", required=True, type=Path)
+    binaries.add_argument("--daemon-dir", required=True, type=Path)
     binaries.add_argument("--output", type=Path, default=Path("dist"))
     binaries.set_defaults(run=package_binaries)
     web = commands.add_parser("web", help="archive an already-built web artifact")

@@ -1,0 +1,16 @@
+{
+  "PolicyConfirmed": false,
+  "BinaryPath": "C:\\REPLACE\\lightremote.exe",
+  "RelayUrl": "https://relay.example.invalid",
+  "WebUrl": "https://client.example.invalid/",
+  "OperatorToken": "REPLACE_WITH_OPERATOR_TOKEN",
+  "ShareDir": "",
+  "AllowShell": false,
+  "AllowWrite": false,
+  "AllowDesktop": false,
+  "AllowInput": false,
+  "AllowClipboard": false,
+  "AllowClipboardRead": false,
+  "AllowClipboardWrite": false,
+  "AutoUpdate": false
+}

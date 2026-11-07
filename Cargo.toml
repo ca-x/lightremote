@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/services", "crates/relay", "crates/cli", "crates/native"]
-default-members = ["crates/core", "crates/services", "crates/relay", "crates/cli"]
+members = ["crates/core", "crates/services", "crates/relay", "crates/cli", "crates/native", "crates/updater", "crates/daemon"]
+default-members = ["crates/core", "crates/services", "crates/relay", "crates/cli", "crates/updater", "crates/daemon"]
 
 [workspace.package]
 version = "0.1.1"

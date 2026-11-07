@@ -1,0 +1,20 @@
+{
+  "relay": "https://relay.example.invalid",
+  "web_url": "https://client.example.invalid/",
+  "state_dir": "/var/lib/lightremote-daemon",
+  "policy_confirmed": false,
+  "auto_update": false,
+  "network": "default",
+  "share_dir": null,
+  "allow_write": false,
+  "allow_shell": false,
+  "allow_desktop": false,
+  "allow_input": false,
+  "allow_clipboard": false,
+  "allow_clipboard_read": false,
+  "allow_clipboard_write": false,
+  "shell": null,
+  "max_file_size": 1073741824,
+  "max_concurrent_streams": 16,
+  "io_timeout_secs": 60
+}

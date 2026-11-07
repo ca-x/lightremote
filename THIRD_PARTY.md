@@ -17,6 +17,12 @@ with LLVM exception/MIT), xterm.js (MIT), and Buf's Protobuf runtime
 terms and transitive notices. GTK and other Linux system libraries remain
 system dependencies; release binaries do not bundle a Linux desktop runtime.
 
+Resident service and update additions use windows-service (MIT/Apache-2.0),
+fs2 (MIT/Apache-2.0), tokio-util (MIT), rustix (Apache-2.0 with LLVM exception/MIT),
+reqwest (MIT/Apache-2.0), tar (MIT/Apache-2.0), flate2 (MIT/Apache-2.0), and zip
+(MIT). Their locked package manifests and bundled upstream notices remain the
+authoritative license sources. No third-party updater implementation was copied.
+
 NSH is pinned to a Git commit in crates/native/Cargo.toml, not an unversioned
 system CLI. TMP uses its published tunnel-mux 0.1.0 crate and immutable Node
 SDK release archive; no sibling source checkout is needed.
