@@ -43,10 +43,11 @@ function Assert-ServiceDescriptor {
             ($rule.PropagationFlags -band [System.Security.AccessControl.PropagationFlags]::InheritOnly) -ne 0) { continue }
         if ($trusted -contains $rule.IdentityReference.Value) { continue }
         if ($Access -eq 'Private') { throw 'Private service paths may only grant SYSTEM and Administrators access.' }
-        # GENERIC_ALL/WRITE, DELETE, WRITE_DAC/OWNER, WRITE_EA/ATTRIBUTES; directories
-        # also reject DELETE_CHILD. Shared ancestors may create unrelated children.
+        # Shared ancestors (including stock ProgramData) may create unrelated
+        # children and change their own metadata, but never delete or replace
+        # existing trusted children or change ownership/access control.
         $mask = switch ($Access) {
-            'Ancestor' { 0x500D0150 }
+            'Ancestor' { 0x500D0040 }
             'Parent' { 0x500D0156 }
             'Binary' { 0x500D0116 } # Also WRITE_DATA and APPEND_DATA on the executable.
         }

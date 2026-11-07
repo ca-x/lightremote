@@ -51,6 +51,8 @@ foreach ($right in @('GA', 'GW')) {
 Assert-Rejected { Assert-ServiceDescriptor (New-Descriptor ($safe + '(A;;0x40;;;BU)')) Ancestor } 'DELETE_CHILD ancestor'
 Assert-Rejected { Assert-ServiceDescriptor (New-Descriptor ($safe + '(A;;0x2;;;BU)')) Parent } 'writable immediate parent'
 Assert-Accepted { Assert-ServiceDescriptor (New-Descriptor ($safe + '(A;;0x4;;;BU)')) Ancestor } 'shared ancestor can create unrelated directories'
+Assert-Accepted { Assert-ServiceDescriptor (New-Descriptor ($safe + '(A;CI;0x116;;;BU)')) Ancestor } 'stock ProgramData ancestor metadata and unrelated child creation'
+Assert-Rejected { Assert-ServiceDescriptor (New-Descriptor ($safe + '(A;CI;0x116;;;BU)')) Parent } 'stock ProgramData cannot be the binary immediate parent'
 Assert-Rejected { Assert-ServiceDescriptor (New-Descriptor ($safe + '(A;OICIIO;FA;;;BU)')) Private } 'untrusted inheritable state grants'
 Assert-Rejected { Assert-ServiceDescriptor (New-Descriptor 'O:SYG:SY') Binary } 'null DACL'
 $personal = 'S-1-5-21-111111111-222222222-333333333-1001'
