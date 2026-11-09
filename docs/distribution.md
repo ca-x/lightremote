@@ -82,7 +82,9 @@ choose which version to put on `PATH`.
 
 ## Tag release
 
-1. Set the workspace version and commit the source and lockfiles. Run CI.
+1. Align the workspace and standalone package versions, both the root and
+   `crates/relay/Cargo.lock`, and the npm manifests/lockfiles. Commit the source
+   and lockfiles, then run CI; Docker copies the relay's standalone lockfile.
 2. Push a tag such as `v0.1.1` whose entire value matches `v` plus the workspace
    version. Prereleases require a matching version such as `0.2.0-rc.1`.
 3. `release.yml` validates the tag, runs all CI checks and the full native
