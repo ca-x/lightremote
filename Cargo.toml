@@ -4,10 +4,10 @@ members = ["crates/core", "crates/services", "crates/relay", "crates/cli", "crat
 default-members = ["crates/core", "crates/services", "crates/relay", "crates/cli"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/lib-x/lightremote"
+repository = "https://github.com/ca-x/lightremote"
 rust-version = "1.88"
 
 [profile.release]

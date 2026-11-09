@@ -41,12 +41,21 @@ projects; the standalone Rust binary here builds with Cargo.
 
 ## Operations and bounds
 
-Paste a full invitation URL or fragment and connect. Connection failures,
-operation rejection and remote stream reset appear in the error area. Refresh
-Capabilities to see the host's local permissions. Displays queries the selected
-host's display IDs.
+Paste a full invitation URL or fragment into the masked Invitation field and
+connect. The field clears on submission; the connection can be cancelled.
+Connection failures, operation rejection and remote stream reset appear in the
+persistent header. Desktop, Terminal, Files, Clipboard and Session are separate
+keyboard-navigable workspaces; switching tools retains drafts and the terminal,
+but releases remote input. Session → Refresh permissions queries the host's
+permissions. Remote actions stay disabled until their permission is granted.
+Desktop → Find displays populates the labeled display picker without replacing
+permission state. Files uses a virtualized name/type/size directory list.
 
-Desktop opens the `desktop` route at 10 FPS / JPEG quality 70. Screenshot opens
+The app owns its light/dark tokens and styled NSH controls; see
+[native UI design](../../docs/native-ui.md). High-frequency navigation and input
+have immediate feedback without ornamental motion or artificial delays.
+
+Start viewing opens the `desktop` route at 10 FPS / JPEG quality 70. Capture once opens
 that route with `single:true` and validates successful stream completion before
 making the frame exportable. Save image writes the most recent complete JPEG
 record to the explicit local path, via a same-directory temporary file, without
@@ -85,6 +94,7 @@ control stream. Host permission failures are shown unchanged. Text is limited to
 JSON escaping. Reading replaces the editor only on success; a failed read leaves
 its previous contents intact. Disconnect clears remote clipboard data from the
 editor. Empty text is allowed, so Write remote can explicitly clear it.
+Validation appears beside the editor; invalid drafts cannot be written remotely.
 
 Paste local explicitly reads the OS clipboard through NSH's `clipboard_string`
 into the editor; Copy editor locally calls NSH's `set_clipboard`. Neither action
@@ -126,6 +136,17 @@ relay test exercises the real encrypted TMP input stream through blur, release
 records, FIN and completion. Unit tests cover display scaling/offsets, bounds,
 input queue epochs, screenshot export/no-overwrite, UTF-8, control framing and
 receipt errors/checksums.
+
+UI redesign verification on 2026-11-09: native Linux Cargo check, build and
+Clippy pass. NSH headless tests cover disconnected and connecting controls,
+per-permission actions, keyboard navigation, retained drafts, the display picker
+and directory-cell recycling in light/dark and reduced-motion configurations.
+CLI loopback end-to-end, Web checks and Cloudflare unit checks are separate
+evidence, not proof of native on-screen rendering. Launching the actual GTK
+window in this session fails with `Failed to open display`; no screenshot or
+real-desktop acceptance is claimed. `scripts/check.sh` passes its headless
+checks but stops in the default desktop-host build because `libclang` is missing.
+This does not invalidate the separate NSH build, but the full script is not green.
 
 Full Windows/macOS `cargo check` on this Linux host stops in ring's native C
 build (missing MinGW / Apple SDK). Separate compile-only probes checked these

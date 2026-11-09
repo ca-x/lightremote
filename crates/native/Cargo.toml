@@ -27,6 +27,8 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSIm
 nsh-platform-macos = { git = "https://github.com/longbridge/nsh", rev = "0e4a20bd41ee72a35515cecbf9a7fba88742d911", default-features = false }
 
 [dev-dependencies]
+nsh-engine = { git = "https://github.com/longbridge/nsh", rev = "0e4a20bd41ee72a35515cecbf9a7fba88742d911", default-features = false }
+nsh-testing = { git = "https://github.com/longbridge/nsh", rev = "0e4a20bd41ee72a35515cecbf9a7fba88742d911", default-features = false }
 lightremote-relay = { path = "../relay" }
 axum = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }

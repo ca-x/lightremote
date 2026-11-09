@@ -25,9 +25,11 @@ pub const MAX_CLIPBOARD_BYTES: usize = 256 * 1024;
 #[derive(Clone, Default, PartialEq)]
 pub struct State {
     pub connected: bool,
+    pub connecting: bool,
     pub status: String,
     pub error: String,
     pub capabilities: String,
+    pub displays: String,
     pub listing: String,
     pub clipboard: String,
     pub clipboard_revision: u64,
@@ -40,6 +42,16 @@ pub struct State {
     pub shell_running: bool,
     pub display: Option<Display>,
     pub screenshot: Arc<[u8]>,
+}
+
+impl State {
+    pub fn allows(&self, capability: &str) -> bool {
+        self.connected
+            && serde_json::from_str::<Value>(&self.capabilities)
+                .ok()
+                .and_then(|value| value.get(capability).and_then(Value::as_bool))
+                == Some(true)
+    }
 }
 
 pub enum Command {
@@ -260,6 +272,7 @@ async fn run(mut commands: mpsc::Receiver<Command>, state: watch::Sender<State>,
         drop(text);
         state.send_modify(|s| {
             s.error.clear();
+            s.connecting = true;
             s.status = "Connecting and authenticating…".into();
         });
         let connection = {
@@ -280,7 +293,10 @@ async fn run(mut commands: mpsc::Receiver<Command>, state: watch::Sender<State>,
             }
         };
         let Some(connection) = connection else {
-            state.send_modify(|s| s.status = "Disconnected".into());
+            state.send_modify(|s| {
+                s.connecting = false;
+                s.status = "Disconnected".into();
+            });
             continue;
         };
         let mut connection = match connection {
@@ -290,18 +306,25 @@ async fn run(mut commands: mpsc::Receiver<Command>, state: watch::Sender<State>,
                     &state,
                     "Connection or authentication failed. Check relay availability and create a fresh invitation.",
                 );
-                state.send_modify(|s| s.status = "Disconnected".into());
+                state.send_modify(|s| {
+                    s.connecting = false;
+                    s.status = "Disconnected".into();
+                });
                 continue;
             }
             Err(_) => {
                 error(&state, "Connection timed out.");
-                state.send_modify(|s| s.status = "Disconnected".into());
+                state.send_modify(|s| {
+                    s.connecting = false;
+                    s.status = "Disconnected".into();
+                });
                 continue;
             }
         };
         drop(invite);
         state.send_modify(|s| {
             s.connected = true;
+            s.connecting = false;
             s.error.clear();
             s.status = "Authenticated".into();
         });
@@ -368,7 +391,7 @@ async fn run(mut commands: mpsc::Receiver<Command>, state: watch::Sender<State>,
                             let control = control.clone(); let state = state.clone();
                             workers.spawn(async move {
                                 let value = control.call("desktop.displays", json!({})).await?;
-                                state.send_modify(|s| s.capabilities = pretty(&value)); Ok(())
+                                state.send_modify(|s| s.displays = pretty(&value)); Ok(())
                             });
                         }
                         Command::Desktop { display, single } => {
@@ -476,11 +499,13 @@ async fn run(mut commands: mpsc::Receiver<Command>, state: watch::Sender<State>,
         drop(connection);
         state.send_modify(|s| {
             s.connected = false;
+            s.connecting = false;
             s.desktop_running = false;
             s.shell_running = false;
             s.desktop = Arc::from("");
             s.display = None;
             s.capabilities.clear();
+            s.displays.clear();
             s.listing.clear();
             s.clipboard.clear();
             s.clipboard_revision += 1;

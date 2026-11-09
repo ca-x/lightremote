@@ -6,7 +6,7 @@ Remote desktop, terminal and files over [TMP](https://github.com/lib-x/tm), with
 a browser controller and an NSH native controller. The host is written in Rust.
 Run your own relay in Docker or deploy the compatible Cloudflare Worker.
 
-**Early development, v0.1.1.** JPEG desktop streaming is experimental. Platform
+**Early development, v0.2.0.** JPEG desktop streaming is experimental. Platform
 builds, automated tests, physical desktop checks and signing are tracked separately
 in [CAPABILITIES.md](CAPABILITIES.md). The application profiles are defined in
 [docs/design.md](docs/design.md); they do not extend TMP's wire protocol.
@@ -15,7 +15,7 @@ in [CAPABILITIES.md](CAPABILITIES.md). The application profiles are defined in
 
 ## Downloads
 
-Get compiled archives from [GitHub Releases](https://github.com/lib-x/lightremote/releases).
+Get compiled archives from [GitHub Releases](https://github.com/ca-x/lightremote/releases).
 Choose `lightremote-native` for the NSH controller, `lightremote` for the desktop
 host/CLI, `lightremote-headless` for a shell/files host without GUI dependencies,
 or `lightremote-relay` for a self-hosted relay. `lightremote-web` contains static

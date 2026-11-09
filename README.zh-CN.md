@@ -3,13 +3,13 @@
 基于 TMP 的远程桌面、终端和文件传输项目，提供 Web 与 NSH 原生客户端。
 主机程序与自建中继使用 Rust，也支持 Cloudflare Workers + Durable Objects 中继。
 
-当前是 0.1.1 初版。桌面视频使用实验性 JPEG 流；编译、自动化联调、真实桌面
+当前版本为 0.2.0，仍处于早期开发阶段。桌面视频使用实验性 JPEG 流；编译、自动化联调、真实桌面
 验证和签名状态分别记录在 [CAPABILITIES.md](CAPABILITIES.md)。桌面、Shell、
 文件、剪贴板和截图都是应用层 profile，不修改 TMP 通用协议。
 
 ![Web 工作台](docs/screenshots/web-desktop.png)
 
-从 [GitHub Releases](https://github.com/lib-x/lightremote/releases) 下载编译后的包：
+从 [GitHub Releases](https://github.com/ca-x/lightremote/releases) 下载编译后的包：
 `lightremote-native` 是 NSH 原生控制端，`lightremote` 是桌面主机与 CLI，
 `lightremote-headless` 是不依赖 GUI 的 Shell/文件主机，`lightremote-relay` 是中继，
 `lightremote-web` 是 Web 静态资源；二进制包名包含系统和架构。

@@ -404,10 +404,25 @@ dependencies = [
  "proc-macro2",
  "quote",
  "regex",
- "rustc-hash",
+ "rustc-hash 2.1.3",
  "shlex 1.3.0",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "bit-set"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34ddef2995421ab6a5c779542c81ee77c115206f4ad9d5a8e05f4ff49716a3dd"
+dependencies = [
+ "bit-vec",
+]
+
+[[package]]
+name = "bit-vec"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b71798fca2c1fe1086445a7258a4bc81e6e49dcd24c8d0dd9a1e57395b603f51"
 
 [[package]]
 name = "bitflags"
@@ -704,6 +719,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "codespan-reporting"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
+dependencies = [
+ "unicode-width",
+]
+
+[[package]]
 name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -853,6 +877,12 @@ checksum = "acdd7c62a3665c7f6830a51635d9ac9b23ed385797f70a83bb8bafe9c572ab2b"
 dependencies = [
  "winapi",
 ]
+
+[[package]]
+name = "crunchy"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "crypto-common"
@@ -1261,6 +1291,12 @@ name = "float-cmp"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
+
+[[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foreign-types"
@@ -1898,6 +1934,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "half"
+version = "2.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
+dependencies = [
+ "cfg-if",
+ "crunchy",
+ "num-traits",
+ "zerocopy",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "foldhash",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1920,6 +1977,12 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hexf-parse"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "hkdf"
@@ -2076,7 +2139,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -2239,7 +2302,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
- "hashbrown",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -2389,6 +2452,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "libm"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
+
+[[package]]
 name = "libspa"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2438,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "lightremote"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2455,7 +2524,7 @@ dependencies = [
 
 [[package]]
 name = "lightremote-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2478,7 +2547,7 @@ dependencies = [
 
 [[package]]
 name = "lightremote-native"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2488,9 +2557,11 @@ dependencies = [
  "lightremote-relay",
  "nsh-base",
  "nsh-core",
+ "nsh-engine",
  "nsh-platform-linux",
  "nsh-platform-macos",
  "nsh-platform-windows",
+ "nsh-testing",
  "objc2-app-kit",
  "reqwest",
  "serde_json",
@@ -2501,7 +2572,7 @@ dependencies = [
 
 [[package]]
 name = "lightremote-relay"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2519,7 +2590,7 @@ dependencies = [
 
 [[package]]
 name = "lightremote-services"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -2737,6 +2808,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "956787520e75e9bd233246045d19f42fb73242759cc57fba9611d940ae96d4b0"
 
 [[package]]
+name = "naga"
+version = "29.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2bf919621e7975acb27d881bae2fb993e0d45c8e0446e85e6272971e00dc8df"
+dependencies = [
+ "arrayvec",
+ "bit-set",
+ "bitflags 2.13.2",
+ "cfg-if",
+ "cfg_aliases 0.2.2",
+ "codespan-reporting",
+ "half",
+ "hashbrown 0.16.1",
+ "hexf-parse",
+ "indexmap",
+ "libm",
+ "log",
+ "num-traits",
+ "once_cell",
+ "rustc-hash 1.1.0",
+ "thiserror 2.0.21",
+ "unicode-ident",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2785,7 +2881,7 @@ dependencies = [
  "markup5ever_rcdom",
  "nsh-core",
  "regex",
- "rustc-hash",
+ "rustc-hash 2.1.3",
  "serde",
  "serde_json",
  "unicode-segmentation",
@@ -2806,11 +2902,12 @@ dependencies = [
  "imagesize 0.15.0",
  "libc",
  "log",
+ "naga",
  "nsh-macros",
  "nsh-updater",
  "ordered-float",
  "resvg",
- "rustc-hash",
+ "rustc-hash 2.1.3",
  "rustls",
  "serde",
  "serde_json",
@@ -2838,7 +2935,7 @@ dependencies = [
  "libc",
  "log",
  "nsh-core",
- "rustc-hash",
+ "rustc-hash 2.1.3",
  "serde_json",
  "tokio",
  "ureq",
@@ -2892,7 +2989,7 @@ dependencies = [
  "nsh-engine",
  "pango",
  "pangocairo",
- "rustc-hash",
+ "rustc-hash 2.1.3",
  "serde_json",
  "ttf-parser",
 ]
@@ -2920,7 +3017,7 @@ dependencies = [
  "objc2-image-io",
  "objc2-io-kit",
  "objc2-quartz-core",
- "rustc-hash",
+ "rustc-hash 2.1.3",
  "serde_json",
 ]
 
@@ -2935,7 +3032,7 @@ dependencies = [
  "nsh-base",
  "nsh-core",
  "nsh-engine",
- "rustc-hash",
+ "rustc-hash 2.1.3",
  "serde_json",
  "ttf-parser",
  "url",
@@ -2943,6 +3040,18 @@ dependencies = [
  "windows 0.62.2",
  "windows-core 0.62.2",
  "windows-numerics 0.3.1",
+]
+
+[[package]]
+name = "nsh-testing"
+version = "0.4.0"
+source = "git+https://github.com/longbridge/nsh?rev=0e4a20bd41ee72a35515cecbf9a7fba88742d911#0e4a20bd41ee72a35515cecbf9a7fba88742d911"
+dependencies = [
+ "crossbeam-channel",
+ "log",
+ "nsh-core",
+ "nsh-engine",
+ "regex",
 ]
 
 [[package]]
@@ -2988,6 +3097,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+ "libm",
 ]
 
 [[package]]
@@ -3696,7 +3806,7 @@ dependencies = [
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
- "rustc-hash",
+ "rustc-hash 2.1.3",
  "rustls",
  "socket2",
  "thiserror 2.0.21",
@@ -3717,7 +3827,7 @@ dependencies = [
  "rand 0.10.3",
  "rand_pcg",
  "ring",
- "rustc-hash",
+ "rustc-hash 2.1.3",
  "rustls",
  "rustls-pki-types",
  "slab",
@@ -3968,6 +4078,12 @@ checksum = "9da7f59328b09405b181fee1018925fad50f157afb43c0c0f5c522c256dd5907"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hash"

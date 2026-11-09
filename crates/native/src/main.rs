@@ -16,13 +16,13 @@ use nsh_platform_windows as platform;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn main() -> impl std::process::Termination {
     platform::run_app(
-        platform::AppSource::Rust(platform::Root::of::<ui::App>()),
+        platform::AppSource::Rust(ui::root()),
         platform::AppOptions {
             title: "LightRemote".into(),
             components: surface::components(),
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             app_id: "org.libx.lightremote".into(),
-            size: (1100, 900),
+            size: (1120, 860),
             ..Default::default()
         },
     )
