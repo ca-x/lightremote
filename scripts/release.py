@@ -139,6 +139,9 @@ def validate_tag(args: argparse.Namespace) -> None:
     manifest_path = Path(__file__).resolve().parent.parent / "Cargo.toml"
     manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
     version = manifest["workspace"]["package"]["version"]
+    relay_manifest = tomllib.loads((manifest_path.parent / "crates/relay/Cargo.toml").read_text(encoding="utf-8"))
+    if relay_manifest["package"].get("version") != version:
+        raise ValueError("relay version must stay explicit for standalone Docker builds and match the workspace")
     if args.tag != f"v{version}":
         raise ValueError(f"tag {args.tag!r} does not match workspace version v{version}")
     print(f"Validated {args.tag}")
