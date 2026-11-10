@@ -43,7 +43,7 @@ $("app").innerHTML = `
   <a class="brand" href="#" aria-label="roc-remote home"><img class="brand-symbol" src="${logoUrl}" width="44" height="44" alt=""><span>roc-remote<small>REMOTE WORKSPACE</small></span></a>
   <div class="workspace-label">WORKSPACE <span>01</span></div>
   <nav aria-label="Workspace">${["Session", "Desktop", "Terminal", "Files"].map((name, n) => `<button class="nav-item ${n === 0 ? "active" : ""}" data-view="${name.toLowerCase()}" ${n === 0 ? 'aria-current="page"' : ""}>${icon(name.toLowerCase())}<span>${name}</span><span class="nav-index">0${n + 1}</span></button>`).join("")}</nav>
-  <div class="sidebar-bottom"><span class="lock-symbol" aria-hidden="true">◇</span><strong>Private by design</strong><p>End-to-end encrypted.<br>Permission stays with the host.</p><span class="version">ROC-REMOTE / V0.1.0</span></div>
+  <div class="sidebar-bottom"><span class="lock-symbol" aria-hidden="true">◇</span><strong>Private by design</strong><p>End-to-end encrypted.<br>Permission stays with the host.</p><span class="version">ROC-REMOTE / V0.1.1</span></div>
 </aside>
 <div class="workspace">
   <header class="topbar"><span><span class="muted">Workspace</span><span class="slash">/</span><span id="breadcrumb">Session</span></span><span class="status" id="status" role="status"><i></i><span id="status-label">Disconnected</span></span></header>
@@ -86,7 +86,7 @@ $("app").innerHTML = `
       <form id="mkdir-form" class="text-input-row"><label class="sr-only" for="folder-name">New folder name</label><input id="folder-name" placeholder="New folder name" maxlength="255"><button data-connected disabled>Create folder</button></form>
       <p class="field-help">Uploads require host write permission and never overwrite an existing file.</p>
     </section>
-  </main><footer class="app-footer"><span>ROC-REMOTE</span><span id="footer-status">Your workspace, wherever you are.</span><span>V0.1.0</span></footer>
+  </main><footer class="app-footer"><span>ROC-REMOTE</span><span id="footer-status">Your workspace, wherever you are.</span><span>V0.1.1</span></footer>
 </div>`;
 
 document.querySelectorAll<HTMLDetailsElement>(".context-help").forEach((details) => {

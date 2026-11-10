@@ -4,7 +4,7 @@ use crate::client::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use nsh_base::TerminalEvent;
-use nsh_base::{Terminal, TerminalApi, input, tab, tabs, terminal, theme};
+use nsh_base::{Terminal, TerminalApi, input, popover, tab, tabs, terminal, theme};
 #[cfg(not(target_os = "android"))]
 use nsh_core::element::NativeEvent;
 use nsh_core::prelude::*;
@@ -44,8 +44,8 @@ fn section(selected: Signal<Workspace>, target: Workspace) -> nsh_core::element:
         .inset_0()
         .flex_1()
         .min_h_0()
-        .gap_4()
-        .p_5()
+        .gap_3()
+        .when(target != Workspace::Desktop, |view| view.p_4())
         .style_when(move || selected.get() != target, |style| style.invisible())
 }
 
@@ -213,7 +213,6 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
     let remote_path = signal(".".to_owned());
     let local_path = signal(String::new());
     let remote_text = signal(String::new());
-    let screenshot_path = signal(String::new());
     let save_image = client.clone();
     let release = client.clone();
     cleanup(move || release.release_input());
@@ -251,7 +250,7 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
     ]
     .into_iter()
     .fold(
-        tabs().flex_row().flex_wrap().gap_2().px_5().py_3(),
+        tabs().flex_row().flex_wrap().gap_1(),
         |tabs, (workspace, label)| {
             let release = release_for_navigation.clone();
             tabs.child(
@@ -266,13 +265,13 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
                         input_active.set(false);
                         selected.set(workspace);
                     })
-                    .px_4()
-                    .py_2()
-                    .min_h_11()
+                    .px_3()
+                    .py_1()
+                    .min_h_8()
                     .flex_row()
                     .gap_2()
                     .items_center()
-                    .rounded_md()
+                    .rounded_sm()
                     .bg(move || {
                         if selected.get() == workspace {
                             theme().accent
@@ -299,61 +298,52 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
         },
     );
 
-    view().flex_1().min_h_0().bg(move || theme().background).text_color(move || theme().foreground)
-        .child(view().gap_3().px_5().py_4().bg(move || theme().card)
-            .border_b_1().border_color(move || theme().border)
-            .child(row().justify_between()
-                .child(row()
-                    .child(image(format!("data:image/png;base64,{}", STANDARD.encode(include_bytes!("../../../assets/branding/icon.png"))))
-                        .size(px(44.0)).label("roc-remote logo"))
-                    .child(view().gap_1().child(text("roc-remote").text_xl().font_weight(FontWeight::SEMIBOLD))
-                        .child(hint("Your remote workspace. One private session."))))
-                .child(text(move || snapshot.with(|state| if state.connected { "Connected" } else if state.connecting { "Connecting…" } else { "Not connected" }))
-                    .text_sm().font_weight(FontWeight::SEMIBOLD).px_3().py_2().rounded_full().bg(move || theme().muted)
-                    .text_color(move || if snapshot.with(|state| state.connected) { theme().color("success").expect("success token") } else { theme().muted_foreground }))
-                .child(action(move || snapshot.with(|state| if state.connecting { "Cancel" } else { "Disconnect" }), Action::Secondary,
-                    move || snapshot.with(|state| !state.connected && !state.connecting),
-                    move || disconnect.send(Command::Disconnect))))
-            .child(view().gap_2().style_when(move || snapshot.with(|state| state.connected), |style| style.hidden())
-                .child(hint("Invitation"))
-                .child(row().child(field(invitation, "Invitation", "Paste invitation URL or fragment").masked(true)
-                    .disabled(move || snapshot.with(|state| state.connected || state.connecting)))
-                    .child(action("Connect", Action::Primary,
-                        move || invitation.with(|value| value.trim().is_empty()) || snapshot.with(|state| state.connected || state.connecting),
-                        move || { connect.send(Command::Connect(invitation.get_untracked().trim().to_owned())); invitation.set(String::new()); }))))
-            .child(row().style_when(move || snapshot.with(|state| state.error.is_empty()), |style| style.hidden())
-                .child(text(move || snapshot.with(|state| state.error.clone())).role(AccessibilityRole::Alert)
-                    .flex_1().min_w_0().text_sm().text_color(move || theme().destructive).selectable(true))
-                .child(action("Dismiss", Action::Secondary, || false, move || dismiss_error.dismiss_error()))))
-        .child(navigation)
-        .child(view().relative().flex_1().min_h_0()
-        .child(section(selected, Workspace::Desktop).child(scroll().flex_1().child(view().gap_4()
-            .child(view().gap_2().child(heading("Remote desktop")).child(permission_notice(snapshot, "desktop")))
-            .child(row().child(choice(display, "Display", display_items))
-                .child(action("Find displays", Action::Secondary, move || !snapshot.with(|state| state.allows("desktop")), move || displays.send(Command::Displays)))
+    let panes = view().absolute().inset_0().min_h_0()
+        .style_when(move || !snapshot.with(|state| state.connected), |style| style.invisible())
+        .child(section(selected, Workspace::Desktop)
+            .child(row().px_3().py_2().bg(move || theme().card)
+                .child(choice(display, "Display", display_items))
                 .child(action("Start viewing", Action::Primary, move || snapshot.with(|state| !state.allows("desktop") || state.desktop_running), move || start_desktop(&desktop, display, false)))
+                .child(action("Stop viewing", Action::Secondary, move || !snapshot.with(|state| state.desktop_running), move || stop_desktop.send(Command::StopDesktop)))
+                .child(popover().popup_style(|style| style.p_4().rounded_md().border_1().border_color(move || theme().border).bg(move || theme().popover).shadow_md())
+                    .trigger(view().label("Desktop tools").min_h_8().px_3().justify_center().rounded_sm()
+                        .hover(|style| style.bg(move || theme().accent))
+                        .focus(|style| style.outline(px(2.0)).outline_color(move || theme().ring))
+                        .child(text("Tools").text_sm()))
+                    .child(view().w_80().gap_4()
+                .child(action("Find displays", Action::Secondary, move || !snapshot.with(|state| state.allows("desktop")), move || displays.send(Command::Displays)))
                 .child(action("Capture once", Action::Secondary, move || snapshot.with(|state| !state.allows("desktop") || state.desktop_running), move || start_desktop(&screenshot, display, true)))
-                .child(action("Stop viewing", Action::Secondary, move || !snapshot.with(|state| state.desktop_running), move || stop_desktop.send(Command::StopDesktop))))
-            .child(when(move || snapshot.with(|state| state.desktop.is_empty()), move || panel()
-                .child(heading("No remote frame yet"))
-                .child(hint("Connect, choose a display, then start viewing. No capture runs automatically."))))
-            .child(desktop_surface(client.clone(), snapshot, selected, input_active, desktop_tab)
-                .into_element())
-            .child(row().child(text(move || if input_active.get() { "Remote input active" } else { "Remote input released" }).text_sm())
-                .child(action("Release input", Action::Secondary, move || !input_active.get(), move || { release_control.release_input(); input_active.set(false); })))
-            .child(hint("Ctrl+Alt+Esc · Release remote input"))
-            .child(help("Desktop help", "Click to control when permitted. Ctrl+Alt+Esc returns to local controls. Changing focus releases held keys and buttons."))
-            .child(panel().child(hint("Save a frame"))
-                .child(row().child(field(screenshot_path, "Save image path", "New local .jpg path"))
-                    .child(action("Save image", Action::Secondary, move || screenshot_path.with(String::is_empty) || snapshot.with(|state| state.screenshot.is_empty()), move || save_image.send(Command::SaveScreenshot(PathBuf::from(screenshot_path.get_untracked()))))))
+            .child(panel().child(hint("Save captured image"))
+                .child(action("Save image…", Action::Secondary, move || snapshot.with(|state| state.screenshot.is_empty()), move || save_frame(save_image.clone())))
                 .child(hint("Writes a complete frame only. Existing files are never replaced.")))
-            .child(panel().child(hint("Type on the remote desktop"))
+            .child(panel().child(hint("Send text"))
                 .child(permission_notice(snapshot, "input"))
                 .child(row().child(field(remote_text, "Remote text", "Text to type remotely"))
                     .child(action("Send text", Action::Secondary, move || remote_text.with(String::is_empty) || !snapshot.with(|state| state.allows("input")), move || {
                         send_text.send(Command::Text(remote_text.get_untracked())); remote_text.set(String::new());
-                    }))))
-        )))
+                    })))))))
+            .child(view().relative().flex_1().min_h_0().bg(move || theme().color("remote-canvas").expect("remote canvas token"))
+                .child(desktop_surface(client.clone(), snapshot, selected, input_active, desktop_tab).into_element())
+                .child(view().absolute().inset_0().justify_center().items_center().gap_2()
+                    .style_when(move || snapshot.with(|state| !state.desktop.is_empty()), |style| style.hidden())
+                    .child(text("Remote desktop").role(AccessibilityRole::Header).accessibility_level(2)
+                        .text_base().font_weight(FontWeight::MEDIUM).text_color(move || theme().color("canvas-foreground").expect("canvas foreground token")))
+                    .child(text(move || snapshot.with(|state| {
+                        if state.capabilities.is_empty() {
+                            "Checking host permissions…"
+                        } else if !state.allows("desktop") {
+                            "Desktop viewing isn’t granted by this host."
+                        } else {
+                            "Choose a display, then start viewing. No capture starts automatically."
+                        }
+                    })).text_sm().text_color(move || theme().color("canvas-muted").expect("canvas muted token")))
+                    .child(view().style_when(move || snapshot.with(|state| state.capabilities.is_empty() || state.allows("desktop")), |style| style.hidden())
+                        .child(action("Session permissions", Action::Secondary, || false, move || selected.set(Workspace::Session))))))
+            .child(row().px_3().py_1().bg(move || theme().card)
+                .child(text(move || if input_active.get() { "Remote input active" } else { "Remote input released" }).text_sm())
+                .child(action("Release input", Action::Secondary, move || !input_active.get(), move || { release_control.release_input(); input_active.set(false); }))
+                .child(hint("Ctrl+Alt+Esc"))
+                .child(help("Desktop help", "Click to control when permitted. Ctrl+Alt+Esc returns to local controls. Changing focus releases held keys and buttons."))))
         .child(section(selected, Workspace::Terminal)
             .child(view().gap_2().child(heading("Remote terminal")).child(permission_notice(snapshot, "shell")))
             .child(row()
@@ -412,10 +402,166 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
             .child(help("Session help", "Disconnect to end this session. Reconnecting never automatically repeats a file, clipboard or terminal operation."))
             .child(icon_credits())
         )))
+        ;
+
+    let submit = client.clone();
+    let cancel = client.clone();
+    let welcome = view().absolute().inset_0()
+        .bg(move || theme().card)
+        .style_when(move || snapshot.with(|state| state.connected), |style| style.hidden())
+        .child(scroll().label("Connection form").flex_1().child(view().min_h(move || px((window().height.0 - 80.0).max(0.0))).p_6().justify_center().items_center()
+        .child(view().w_96().max_w(percentage(100.0)).gap_4()
+            .child(view().gap_2().child(text("Connect to a host").role(AccessibilityRole::Header).accessibility_level(1).text_xl().font_weight(FontWeight::SEMIBOLD))
+                .child(hint("Paste the invitation shared by your host.")))
+            .child(view().gap_2().child(hint("Invitation"))
+                .child(field(invitation, "Invitation", "Invitation URL or fragment").masked(true).w_full()
+                    .disabled(move || snapshot.with(|state| state.connecting))
+                    .on_submit(move |_: &str| {
+                        if invitation.with_untracked(|value| !value.trim().is_empty()) && !snapshot.with_untracked(|state| state.connecting || state.connected) {
+                            submit.send(Command::Connect(invitation.get_untracked().trim().to_owned()));
+                            invitation.set(String::new());
+                        }
+                    }))
+                .child(hint("Anyone with this link can join. Keep it private.")))
+            .child(row().justify_end()
+                .child(view().style_when(move || !snapshot.with(|state| state.connecting), |style| style.hidden())
+                    .child(action("Cancel", Action::Secondary, || false, move || cancel.send(Command::Disconnect))))
+                .child(action("Connect", Action::Primary,
+                    move || invitation.with(|value| value.trim().is_empty()) || snapshot.with(|state| state.connecting || state.connected),
+                    move || { connect.send(Command::Connect(invitation.get_untracked().trim().to_owned())); invitation.set(String::new()); })))
+            .child(help("Connection help", "Invitations work once. The host chooses which tools you may use; viewing and control never start automatically.")))));
+
+    view()
+        .flex_1()
+        .min_h_0()
+        .bg(move || theme().card)
+        .text_color(move || theme().foreground)
+        .child(
+            row()
+                .px_3()
+                .py_2()
+                .border_b_1()
+                .border_color(move || theme().border)
+                .child(
+                    image(format!(
+                        "data:image/png;base64,{}",
+                        STANDARD.encode(include_bytes!("../../../assets/branding/icon.png"))
+                    ))
+                    .size(px(24.0))
+                    .label("roc-remote logo"),
+                )
+                .child(
+                    text("roc-remote")
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD),
+                )
+                .child(view().flex_1())
+                .child(navigation.style_when(
+                    move || !snapshot.with(|state| state.connected),
+                    |style| style.hidden(),
+                ))
+                .child(view().flex_1())
+                .child(
+                    text(move || {
+                        snapshot.with(|state| {
+                            if state.connected {
+                                "Connected"
+                            } else if state.connecting {
+                                "Connecting…"
+                            } else {
+                                "Not connected"
+                            }
+                        })
+                    })
+                    .text_sm()
+                    .text_color(move || theme().muted_foreground),
+                )
+                .child(
+                    view()
+                        .style_when(
+                            move || !snapshot.with(|state| state.connected),
+                            |style| style.hidden(),
+                        )
+                        .child(action(
+                            "Disconnect",
+                            Action::Secondary,
+                            || false,
+                            move || disconnect.send(Command::Disconnect),
+                        )),
+                ),
         )
-        .child(view().px_5().py_3().border_t_1().border_color(move || theme().border)
-            .child(text(move || snapshot.with(|state| state.status.clone())).text_sm().selectable(true)))
+        .child(
+            row()
+                .px_3()
+                .py_2()
+                .style_when(
+                    move || snapshot.with(|state| state.error.is_empty()),
+                    |style| style.hidden(),
+                )
+                .child(
+                    text(move || snapshot.with(|state| state.error.clone()))
+                        .role(AccessibilityRole::Alert)
+                        .flex_1()
+                        .min_w_0()
+                        .text_sm()
+                        .text_color(move || theme().destructive)
+                        .selectable(true),
+                )
+                .child(action(
+                    "Dismiss",
+                    Action::Secondary,
+                    || false,
+                    move || dismiss_error.dismiss_error(),
+                )),
+        )
+        .child(
+            view()
+                .relative()
+                .flex_1()
+                .min_h_0()
+                .child(panes)
+                .child(welcome),
+        )
+        .child(
+            view()
+                .px_3()
+                .py_1()
+                .border_t_1()
+                .border_color(move || theme().border)
+                .child(
+                    text(move || {
+                        snapshot.with(|state| {
+                            if !state.connected && state.status == "Disconnected" {
+                                String::new()
+                            } else {
+                                state.status.clone()
+                            }
+                        })
+                    })
+                    .text_xs()
+                    .selectable(true),
+                ),
+        )
         .into_element()
+}
+
+fn save_frame(client: Client) {
+    let picked = pick_save_path(
+        nsh_core::file_dialog::SaveDialog::new()
+            .title("Save captured image")
+            .file_name("remote-desktop.jpg")
+            .filter(nsh_core::file_dialog::FileFilter::new(
+                "JPEG image",
+                ["jpg", "jpeg"],
+            )),
+    );
+    spawn(async move {
+        match picked.await {
+            Ok(Some(path)) => client.send(Command::SaveScreenshot(path)),
+            Ok(None) => {}
+            Err(error) => client.report(&format!("Cannot open save dialog: {error}")),
+        }
+    });
 }
 
 fn file_listing(snapshot: Signal<State>) -> impl IntoElement {
@@ -528,8 +674,8 @@ fn desktop_surface(
             json!(snapshot.with(|s| s.desktop.to_string()))
         })
         .w_full()
-        .h(move || window().height * 0.5)
-        .min_h_48()
+        .flex_1()
+        .min_h_0()
         .bg(move || theme().color("remote-canvas").expect("remote canvas token"))
         .style_when(
             move || snapshot.with(|state| state.desktop.is_empty()),
@@ -650,5 +796,6 @@ fn desktop_surface(
     image(move || snapshot.with(|state| state.desktop.to_string()))
         .label("Read-only remote desktop preview")
         .w_full()
-        .h(move || window().height * 0.5)
+        .flex_1()
+        .min_h_0()
 }

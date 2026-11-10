@@ -61,6 +61,27 @@ installation with it. Desktop release archives remain unsigned and separate.
 
 ## Evidence and remaining checks
 
+### v0.1.1 build 2 local trial package
+
+On 2026-11-10 the v0.1.1 build 2 ARM64 debug APK was built successfully from
+the local working tree. For this APK, `aapt` confirmed package
+`io.github.cax.roc_remote`, version `0.1.1`, version code `2`, minimum SDK 28
+and target SDK 35. `apksigner verify` confirmed v3 signing with an Android Debug
+certificate (`CN=Android Debug`), and `zipalign -c -P 16 4` passed. These checks
+apply to the final local repackaged APK (SHA256
+`0e380dfa314b6725378573ba01822901afeb6dd76a3716fc1418f8cfba19617f`).
+Separately, `readelf -lW` on this APK's stripped AArch64 `libnsh.so` confirmed
+all four LOAD segments have 16-KiB alignment (`0x4000`). It uses the
+Android Debug packaging path, not a production release keystore.
+No emulator or physical-device installation/run, Android rendering,
+encrypted viewing session or store submission is claimed. Linux GTK/X11
+screenshots in isolated Xvfb are not Android device evidence.
+
+### Historical v0.1.0 trial package
+
+The following package metadata, signing and alignment results describe the
+older v0.1.0 artifact, not the v0.1.1 build 2 APK.
+
 On 2026-11-10 the real ARM64 APK was built using the pinned NSH CLI and runtime,
 SDK 35, NDK r27d and OpenJDK 27. `aapt` confirmed package
 `io.github.cax.roc_remote`, version `0.1.0`, minimum SDK 28, target SDK 35,

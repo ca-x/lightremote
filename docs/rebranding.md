@@ -9,7 +9,7 @@ git remote set-url origin git@github.com:ca-x/roc-remote.git
 All product, Cargo package, executable, archive and container names now use
 `roc-remote`. Rust imports use `roc_remote`, `roc_remote_core`,
 `roc_remote_services` and `roc_remote_relay`. The Web and Cloudflare packages
-use version `0.1.0`, matching all five Rust workspace packages.
+use version `0.1.1`, matching all five Rust workspace packages.
 
 Replace the `LIGHTREMOTE_` environment-variable prefix with `ROC_REMOTE_` in
 service definitions, operator secrets, CLI invocations and Cloudflare configuration.

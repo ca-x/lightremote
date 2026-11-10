@@ -8,7 +8,7 @@
 基于 TMP 的远程桌面、终端和文件传输项目，提供 Web 与 NSH 原生客户端。
 主机程序与自建中继使用 Rust，也支持 Cloudflare Workers + Durable Objects 中继。
 
-当前版本为 0.1.0，仍处于早期开发阶段。桌面视频使用实验性 JPEG 流；编译、自动化联调、真实桌面
+当前版本为 0.1.1，仍处于早期开发阶段。桌面视频使用实验性 JPEG 流；编译、自动化联调、真实桌面
 验证和签名状态分别记录在 [CAPABILITIES.md](CAPABILITIES.md)。桌面、Shell、
 文件、剪贴板和截图都是应用层 profile，不修改 TMP 通用协议。
 
@@ -16,10 +16,30 @@
 
 ### 原生桌面端
 
-![使用 Kubai 工作区图标的 roc-remote 原生桌面端](docs/screenshots/native-desktop.png)
+![roc-remote 原生连接页](docs/screenshots/native-desktop.png)
 
-Linux GTK/X11 实际窗口，当前未连接。工作区图标保留简短名称，辅助说明收进上下文帮助。
-截图只证明本地界面显示，不代表远程桌面功能已完成真机验收。
+原生连接页只保留邀请输入与连接操作，不再照搬 Web 卡片。连接后使用紧凑工具栏，
+持续显示工作区导航、连接状态与断开按钮，桌面画布填满剩余工作区。
+低频操作收进 Tools；保存图片打开系统保存对话框，不覆盖已有文件。
+桌面控件最小高度为 32 点，实验性 Android 查看器保留 48 点触摸目标。
+
+![roc-remote 已连接原生会话](docs/screenshots/native-session.png)
+
+<details>
+<summary>查看原生 Tools 与深色连接页</summary>
+
+![原生会话实际展开 Tools 弹出面板](docs/screenshots/native-tools.png)
+
+![原生深色连接页](docs/screenshots/native-dark.png)
+
+Tools 截图为实际展开的 popover，未请求远端 capture。深色外观使用隔离
+`XDG_CONFIG_HOME` 下的临时 GTK4 配置，未改动用户配置。
+
+</details>
+
+原生截图来源为隔离 Xvfb `:101`、1280×720 中实际运行的 v0.1.1 Linux GTK/X11 应用。
+会话通过真实 localhost relay 与 host 连接，host 授予 desktop 权限，但未请求远端 capture、
+未启用 input，画面不含 secret。这仅证明本地界面与实际连接，不是物理桌面、Android 真机或多系统验收。
 
 ### Web 控制端
 
@@ -37,7 +57,7 @@ Linux GTK/X11 实际窗口，当前未连接。工作区图标保留简短名称
 
 </details>
 
-以上截图采集于 2026 年 11 月 10 日，来自本地工作树构建。
+截图来源为 2026 年 11 月 10 日的本地工作树构建。
 复现方式和验证边界见[截图说明](docs/screenshots/README.md)。
 
 从 [GitHub Releases](https://github.com/ca-x/roc-remote/releases) 下载编译后的包：

@@ -18,9 +18,9 @@ pub fn action(
     button()
         .disabled(disabled)
         .on_press(run)
-        .px_4()
-        .py_2()
-        .min_h(move || px(if os() == Os::Android { 48.0 } else { 44.0 }))
+        .px_3()
+        .py_1()
+        .min_h(move || px(if os() == Os::Android { 48.0 } else { 32.0 }))
         .items_center()
         .justify_center()
         .rounded(move || theme().radius)
@@ -58,7 +58,7 @@ pub fn field(value: Signal<String>, label: &'static str, placeholder: &'static s
         .placeholder(placeholder)
         .px_3()
         .py_2()
-        .min_h(move || px(if os() == Os::Android { 48.0 } else { 44.0 }))
+        .min_h(move || px(if os() == Os::Android { 48.0 } else { 32.0 }))
         .border_1()
         .border_color(move || theme().input)
         .focus(|style| style.outline(px(2.0)).outline_color(move || theme().ring))
@@ -73,7 +73,7 @@ pub fn heading(label: &'static str) -> impl IntoElement {
     text(label)
         .role(AccessibilityRole::Header)
         .accessibility_level(2)
-        .text_lg()
+        .text_base()
         .font_weight(FontWeight::SEMIBOLD)
 }
 
@@ -113,7 +113,9 @@ pub fn choice(
         .disabled_style(|style| style.opacity(0.45))
         .trigger(
             view()
-                .min_h_11()
+                .w_56()
+                .min_w_0()
+                .min_h(move || px(if os() == Os::Android { 48.0 } else { 32.0 }))
                 .px_3()
                 .py_2()
                 .justify_center()
@@ -128,11 +130,10 @@ pub fn choice(
                                 .iter()
                                 .find(|item| item.value.as_ref() == value.get().as_str())
                                 .map(|item| item.title.to_string())
-                                .unwrap_or_else(|| {
-                                    format!("Display {} · find displays to choose", value.get())
-                                })
+                                .unwrap_or_else(|| format!("Display {}", value.get()))
                         })
                     })
+                    .truncate()
                     .text_sm()
                     .text_color(move || theme().foreground),
                 ),
@@ -155,7 +156,7 @@ pub fn icon(name: &'static str) -> impl IntoElement {
         _ => include_str!("../../../../assets/icons/info.svg"),
     };
     svg(nsh_core::element::ImageSrc::svg_markup(markup))
-        .size(px(24.0))
+        .size(move || px(if os() == Os::Android { 24.0 } else { 18.0 }))
         .accessible(false)
 }
 
@@ -207,7 +208,7 @@ fn disclosure(
                                 ),
                         ),
                 )
-                .min_h_12()
+                .min_h(move || px(if os() == Os::Android { 48.0 } else { 32.0 }))
                 .px_3()
                 .flex_row()
                 .gap_2()
@@ -236,13 +237,7 @@ fn disclosure(
 }
 
 pub fn panel() -> nsh_core::element::View {
-    view()
-        .gap_4()
-        .p_5()
-        .rounded_lg()
-        .border_1()
-        .border_color(move || theme().border)
-        .bg(move || theme().card)
+    view().gap_3().bg(move || theme().card)
 }
 
 pub fn row() -> nsh_core::element::View {

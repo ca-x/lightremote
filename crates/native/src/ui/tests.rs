@@ -48,30 +48,104 @@ fn ConnectingSession() -> impl IntoElement {
     )
 }
 
+#[component]
+fn NoDesktopSession() -> impl IntoElement {
+    let (client, _updates) = Client::start().unwrap();
+    workspace(
+        client,
+        signal(State {
+            connected: true,
+            capabilities: json!({"desktop": false}).to_string(),
+            ..State::default()
+        }),
+    )
+}
+
+#[component]
+fn CapturedSession() -> impl IntoElement {
+    let (client, _updates) = Client::start().unwrap();
+    workspace(
+        client,
+        signal(State {
+            connected: true,
+            capabilities: json!({"desktop": true}).to_string(),
+            screenshot: b"captured frame".as_slice().into(),
+            ..State::default()
+        }),
+    )
+}
+
 #[test]
-fn disconnected_tools_are_disabled_in_light_and_dark() -> Result<(), String> {
+fn denied_desktop_explains_permission_and_offers_session_details() -> Result<(), String> {
+    let mut app = start::<NoDesktopSession>(false, true);
+    app.wait_for("Desktop viewing isn’t granted by this host.")?;
+    assert!(
+        !app.screen()
+            .shows("Choose a display, then start viewing. No capture starts automatically.")
+    );
+    assert!(!app.screen().enabled("role:button[Start viewing]")?);
+    app.press("role:button[Session permissions]")?;
+    app.wait_for("The host decides what this session can do. Everything defaults off.")?;
+    Ok(())
+}
+
+#[test]
+fn desktop_tools_escape_and_cancelled_save_do_not_write() -> Result<(), String> {
+    let mut app = start::<CapturedSession>(true, true);
+    app.wait_for("Connected")?;
+    assert!(!app.screen().matches("role:button[Save image…]")?);
+    app.press("label:Desktop tools")?;
+    app.wait_for("Save captured image")?;
+    app.press_key("Escape")?;
+    assert!(!app.screen().matches("role:button[Save image…]")?);
+    app.press("label:Desktop tools")?;
+    app.on_pick_save_path(None)?;
+    app.press("role:button[Save image…]")?;
+    app.wait(std::time::Duration::from_millis(50))?;
+    let requests = app.screen().file_requests();
+    assert_eq!(requests.len(), 1);
+    assert!(
+        matches!(&requests[0], nsh_core::file_dialog::FileRequest::SaveDialog(dialog) if dialog.file_name.as_deref() == Some("remote-desktop.jpg"))
+    );
+    assert!(!app.screen().matches("role:alert")?);
+    Ok(())
+}
+
+#[test]
+fn short_connection_window_keeps_expanded_help_in_a_scroll_region() -> Result<(), String> {
+    let mut app = start::<App>(false, true);
+    app.set_viewport(Size::new(px(640.0), px(320.0)))?;
+    app.scroll("label:Connection form", px(240.0))?;
+    app.press("role:button[Connection help]")?;
+    app.wait_for("Invitations work once. The host chooses which tools you may use; viewing and control never start automatically.")?;
+    assert!(app.screen().matches("label:Invitation")?);
+    assert!(app.screen().matches("role:button[Connect]")?);
+    Ok(())
+}
+
+#[test]
+fn disconnected_window_is_a_connection_task_not_a_disabled_dashboard() -> Result<(), String> {
     for dark in [false, true] {
         let mut app = start::<App>(dark, true);
         app.wait_for("Not connected")?;
         assert!(app.screen().shows("roc-remote"));
         assert!(!app.screen().enabled("role:button[Connect]")?);
-        assert!(!app.screen().enabled("role:button[Start viewing]")?);
-        assert!(!app.screen().enabled("role:button[Capture once]")?);
-        app.press("role:tab[Terminal]")?;
-        assert!(!app.screen().enabled("role:button[Open shell]")?);
-        app.press("role:tab[Files]")?;
-        assert!(!app.screen().enabled("role:button[List directory]")?);
-        app.press("role:tab[Clipboard]")?;
-        assert!(!app.screen().enabled("role:button[Read remote]")?);
-        assert!(!app.screen().enabled("role:button[Write remote]")?);
+        app.wait_for("Connect to a host")?;
+        assert!(!app.screen().matches("role:tab[Desktop]")?);
+        assert!(!app.screen().matches("role:button[Start viewing]")?);
+        assert!(!app.screen().matches("role:button[Disconnect]")?);
+        assert!(
+            !app.screen()
+                .shows("Your remote workspace. One private session.")
+        );
     }
     Ok(())
 }
 
 #[test]
 fn drafts_survive_workspace_switches() -> Result<(), String> {
-    let mut app = start::<App>(false, false);
-    app.wait_for("Not connected")?;
+    let mut app = start::<LimitedSession>(false, false);
+    app.wait_for("Connected")?;
     app.press("role:tab[Clipboard]")?;
     app.type_text("label:Clipboard editor", "a local draft")?;
     app.press("role:tab[Files]")?;
@@ -91,9 +165,8 @@ fn drafts_survive_workspace_switches() -> Result<(), String> {
 
 #[test]
 fn keyboard_arrows_change_the_workspace() -> Result<(), String> {
-    let mut app = start::<App>(false, false);
-    app.wait_for("Not connected")?;
-    app.press_key("tab")?;
+    let mut app = start::<LimitedSession>(false, false);
+    app.wait_for("Connected")?;
     app.press_key("tab")?;
     app.press_key("ArrowRight")?;
     app.wait_for("Remote terminal")?;
@@ -112,7 +185,7 @@ fn invalid_invitation_reports_failure_and_clears_secret_field() -> Result<(), St
     app.press("role:button[Connect]")?;
     app.wait_for("Invalid invitation. Paste the complete invitation URL or fragment.")?;
     assert_eq!(app.screen().input_text("label:Invitation")?, Some(""));
-    assert!(!app.screen().enabled("role:button[Disconnect]")?);
+    assert!(!app.screen().matches("role:button[Disconnect]")?);
     assert!(app.screen().matches("role:alert")?);
     app.press("role:button[Dismiss]")?;
     assert!(

@@ -1,6 +1,6 @@
 {
   "cssVars": {
-    "theme": { "radius": "8px" },
+    "theme": { "radius": "5px" },
     "light": {
       "background": "#f5f6f8", "foreground": "#20252d",
       "card": "#ffffff", "card-foreground": "#20252d",
@@ -10,7 +10,7 @@
       "accent": "#e7efff", "accent-foreground": "#194fae",
       "border": "#d5dae2", "input": "#8995a5", "ring": "#245dce",
       "destructive": "#b42332", "success": "#216344",
-      "remote-canvas": "#11151c"
+      "remote-canvas": "#11151c", "canvas-foreground": "#edf0f5", "canvas-muted": "#b0bac9"
     },
     "dark": {
       "background": "#15181e", "foreground": "#edf0f5",
@@ -21,7 +21,7 @@
       "accent": "#293f62", "accent-foreground": "#c8dcff",
       "border": "#424c5c", "input": "#778497", "ring": "#a7c7ff",
       "destructive": "#ffb3ba", "success": "#9ddab4",
-      "remote-canvas": "#11151c"
+      "remote-canvas": "#11151c", "canvas-foreground": "#edf0f5", "canvas-muted": "#b0bac9"
     }
   }
 }

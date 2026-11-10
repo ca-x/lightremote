@@ -1,6 +1,6 @@
 [package]
 name = "roc-remote-services"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 rust-version = "1.88"
 description = "Permission-gated host services for roc-remote byte streams"

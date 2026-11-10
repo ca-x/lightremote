@@ -3968,7 +3968,7 @@ dependencies = [
 
 [[package]]
 name = "roc-remote"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -3985,7 +3985,7 @@ dependencies = [
 
 [[package]]
 name = "roc-remote-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -4008,7 +4008,7 @@ dependencies = [
 
 [[package]]
 name = "roc-remote-native"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -4033,7 +4033,7 @@ dependencies = [
 
 [[package]]
 name = "roc-remote-relay"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -4051,7 +4051,7 @@ dependencies = [
 
 [[package]]
 name = "roc-remote-services"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "arboard",

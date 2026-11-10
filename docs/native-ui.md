@@ -9,6 +9,31 @@ Keep the OS title bar and system font. A remote session, not transport internals
 is the organizing object. No host mode, stored invitations, device history,
 automatic clipboard synchronization or request replay is introduced.
 
+## v0.1.1 native connection and session layout
+
+The disconnected page is a focused native invitation form, not a Web dashboard
+or a stack of Web-style cards. Authentication replaces it with a compact
+connected toolbar containing workspace navigation, connection status and
+Disconnect. Desktop uses the remaining workspace as its canvas, rather than a
+fixed-height preview inside a scrolling card. Connecting alone never starts
+remote capture or arms input.
+
+Display selection and Start viewing / Stop viewing stay near the canvas.
+Tools holds infrequent actions: Find displays, Capture once, Save image and
+Send text. Save image opens the OS save dialog with a JPEG filename/filter;
+cancelling does not write a file, and saving never replaces an existing file.
+These controls remain permission- and state-gated, with no automatic replay.
+Desktop actions, fields, selects and navigation have a 32-point minimum height;
+Android's separate experimental viewer retains 48-point touch targets.
+
+The connection page and `docs/screenshots/native-session.png` use the actual
+v0.1.1 Linux GTK/X11 app in isolated Xvfb `:101` at 1280×720. The connected
+session uses a real localhost relay and host with desktop permission granted,
+but no capture request or input enabled. No secrets are visible. This is local
+UI/connection evidence, not a physical desktop, remote-frame, Android-device or
+cross-platform acceptance test. See `docs/screenshots/README.md` for the source
+and reproduction procedure.
+
 ## Airhand reference, 2026-11-09
 
 Reviewed upstream README, `docs/usage.md` and `docs/security.md` at
@@ -37,7 +62,7 @@ TMP runtime and permission-gated host services separate.
   surfaces, primary / on-primary, muted text, borders, input and focus colors.
 - `ui/controls.rs` owns button variants, fields, rows, panels and typography.
   Pages compose these controls. Native base controls own keyboard and focus.
-- System font; 12–14 pt supporting copy, 16 pt content, 20 pt workspace titles.
+- System font; 12-14 pt supporting copy, 16 pt content, 20 pt workspace titles.
   Spacing uses NSH's 4 pt scale: 8 within a row, 16 between controls, 20 at a
   panel boundary, 24 between task groups. Rounded controls use the theme radius.
 - Use text-labeled tools instead of unlabeled icon guesses. Status always has a
@@ -45,7 +70,7 @@ TMP runtime and permission-gated host services separate.
   status. Never show or persist invitation secrets after submission.
 - Connection and navigation remain outside each workspace's scroll owner.
   Toolbars wrap in narrower windows; fields shrink with `min_w_0`. Default
-  window 1120×860, compact desktop validation viewport 760×700. Android has a
+  window 1120×860, compact desktop target viewport 760×700. Android has a
   separate single-scroll viewer; it does not expose the desktop tool workspaces.
 - Keep tab contents mounted so drafts and the terminal survive navigation.
   Workspace panels share one positioned frame and use `invisible`, not
@@ -89,11 +114,11 @@ requested settings. Only requirements and behavior were borrowed.
 | Directory results can arrive out of order | One listing at a time, with the last successfully loaded path shown | A draft path must not relabel old results |
 | Generic service-unavailable states | Session shows host-specific platform guidance independently of policy | OS consent, build features and host grants are different boundaries |
 | XWayland can make an X11-only injector look ready | Wayland input is refused both in probing and real input construction | Never promise full-desktop control through an unsupported backend |
-| Desktop controls below the touch minimum | Shared actions, fields, selects and tabs have 44-point minimum height | Preserve native interaction feedback while supporting touch targets |
+| One touch-sized density for every platform | Desktop controls use 32-point minimum heights; Android uses 48-point targets | Compact pointer-first desktop controls without shrinking mobile touch targets |
 | No Android app entry | Separate explicitly experimental, read-only Rust NSH viewer | Try genuine packaging without pretending desktop tools work on mobile |
 
-The desktop native surface is proportional to window height; this is media
-geometry, not an arbitrary spacing token. Inactive workspaces remain `invisible`
+The desktop native surface fills the space below its toolbar; it is not a
+fixed-height preview card. Inactive workspaces remain `invisible`
 to preserve terminal dimensions. Keyboard/pointer forwarding and frequent tab
 changes remain immediate; reduced-motion mode requires no separate animation
 path. Standard headings and errors carry Header/Alert accessibility semantics.
@@ -119,8 +144,9 @@ desktop filesystem paths. See `docs/android.md`.
 The primary task remains explicit remote access, not icon exploration. Existing
 workspace state and connection/operation owners are unchanged. Shared controls
 provide static Kubai SVGs, named workspace tabs and contextual help. Desktop
-hover or keyboard focus shows NSH's Tooltip; pressing the same named, 48-point
-help trigger expands inline text. Touch uses the inline disclosure, not hover
+hover or keyboard focus shows NSH's Tooltip; pressing the same named
+help trigger expands inline text. Desktop help uses a 32-point minimum height;
+Android help retains a 48-point target. Touch uses inline disclosure, not hover
 or long press. A second press collapses it. There is no ornamental motion or
 automatic remote action. The web equivalent uses native details/summary,
 pointer-only tooltip styling and Escape dismissal with focus retained.
@@ -151,12 +177,20 @@ tests separately. Headless results do not establish the actual OS appearance,
 screen-reader behavior, signing, hosted CI or Cloudflare deployment. Record
 unavailable real-window evidence explicitly.
 
-Local Linux evidence for this revision: 33 native interaction/unit tests and
-native Clippy pass; the application was launched through GTK/X11 and its own
-1120×860-requested window was captured at the host-constrained 1280×720 size.
-`docs/screenshots/native-desktop.png` shows the disconnected light appearance.
-The session-bus and ibus modules were unavailable in that environment. This
-verifies a real app-window render only, not remote capture/input, screen-reader
-operation, Windows/macOS runtime behavior or complete light/dark visual parity.
-The Web production screenshots include pointer help and a touch-expanded help
+Local v0.1.1 evidence recorded on 2026-11-10: `scripts/check.sh`, 36 native
+tests and native Clippy passed, as did CLI E2E, Chromium-to-Rust integration,
+seven browser E2E tests and relay-pair tests. These local results are separate
+from the GTK/X11 connection-page and connected-session images in Xvfb `:101`.
+The images show a real localhost connection without a remote capture request
+or input; they do not establish physical desktop capture/control. Tools and
+save-dialog behavior also require their own interaction evidence, not just an
+empty canvas image.
+
+The Android v0.1.1 build 2 ARM64 debug APK was built locally; its `aapt`, signing
+and alignment checks are tracked separately in `docs/android.md`. No Android
+device run or multi-OS runtime validation is claimed. Screen readers, light/dark
+parity and physical desktop behavior need separate evidence. Hosted platform
+builds, release archives and checksums are produced by GitHub Actions; local
+tests are not proof of a successful hosted run, signing or live Cloudflare
+deployment. Web screenshots include pointer help and a touch-expanded help
 panel; see `docs/screenshots/README.md` and `npm --prefix web run screenshots`.

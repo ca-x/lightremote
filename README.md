@@ -15,7 +15,7 @@ crate. It is not a mobile host or a full desktop-controller port; see
 [`docs/android.md`](docs/android.md) for scope, debug signing and device-test gaps.
 Run your own relay in Docker or deploy the compatible Cloudflare Worker.
 
-**Early development, v0.1.0.** JPEG desktop streaming is experimental. Platform
+**Early development, v0.1.1.** JPEG desktop streaming is experimental. Platform
 builds, automated tests, physical desktop checks and signing are tracked separately
 in [CAPABILITIES.md](CAPABILITIES.md). The application profiles are defined in
 [docs/design.md](docs/design.md); they do not extend TMP's wire protocol.
@@ -24,10 +24,35 @@ in [CAPABILITIES.md](CAPABILITIES.md). The application profiles are defined in
 
 ### Native desktop
 
-![roc-remote native desktop with Kubai workspace icons](docs/screenshots/native-desktop.png)
+![roc-remote native connection page](docs/screenshots/native-desktop.png)
 
-Actual Linux GTK/X11 window, disconnected. Workspace icons retain short labels;
-secondary instructions use contextual help. This is not a remote-desktop test.
+The native connection page uses a focused invitation form, not Web-style cards.
+After connection, a compact toolbar keeps workspace navigation, connection status
+and Disconnect visible. The desktop canvas fills the remaining workspace;
+infrequent actions live in Tools. Save image opens the system save dialog and
+never replaces an existing file. Desktop controls use a 32-point minimum height;
+the experimental Android viewer retains 48-point touch targets.
+
+![roc-remote connected native session](docs/screenshots/native-session.png)
+
+<details>
+<summary>Native Tools and dark connection page</summary>
+
+![Native session with the Tools popover open](docs/screenshots/native-tools.png)
+
+![Native connection page in dark appearance](docs/screenshots/native-dark.png)
+
+Tools is the actual expanded popover, with no remote capture requested. Dark
+appearance uses a temporary GTK4 configuration under an isolated
+`XDG_CONFIG_HOME`; no user configuration was changed.
+
+</details>
+
+Native images use the actual v0.1.1 Linux GTK/X11 app in isolated Xvfb `:101`
+at 1280×720. The session connects to a real localhost relay and host; the host
+grants desktop permission, but no remote capture is requested and input is not
+enabled. No secrets are visible. This is local UI/connection evidence, not a
+physical desktop, Android device or multi-OS validation.
 
 ### Web controller
 
@@ -46,7 +71,7 @@ remains an experimental read-only native viewer.
 
 </details>
 
-Screenshots captured on November 10, 2026, from local working-tree builds. See
+Screenshot source: November 10, 2026, local working-tree builds. See
 [capture notes](docs/screenshots/README.md) for reproducibility and limitations.
 
 ## Downloads
