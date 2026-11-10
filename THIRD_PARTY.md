@@ -5,6 +5,14 @@ See `assets/branding/README.md` for the original and generated size variants;
 it is not sourced from any reference project. Existing copyright notices remain
 unchanged by the rebrand.
 
+Workspace and context-help icons use six static Kubai Icons from
+`kubai087/kubai-icons`, commit `c583030f168294d0e1926e1e7a4fbcf4ee0676ae`.
+The icon definitions and package renderer are MIT-licensed under upstream
+`LICENSE-ICONS`; its notice is included at `assets/icons/LICENSE`.
+See `assets/icons/README.md` for selection and export settings. The separate
+source-available skill and proprietary website are not bundled, and no dynamic
+icon runtime or framework dependency is added.
+
 roc-remote is an original MIT-licensed implementation. Architecture references
 were read for requirements and platform constraints; their source was not copied:
 

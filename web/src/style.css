@@ -26,7 +26,7 @@ button,
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 10px 15px;
-  min-height: 42px;
+  min-height: 44px;
   background: var(--raised);
   color: var(--chalk);
   cursor: pointer;
@@ -227,6 +227,70 @@ nav {
 }
 .nav-item svg {
   flex-shrink: 0;
+}
+
+.context-help {
+  margin-top: 12px;
+  max-width: 40rem;
+  color: var(--sage);
+}
+.context-help summary {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  list-style: none;
+}
+.context-help summary::-webkit-details-marker {
+  display: none;
+}
+.context-help summary svg {
+  flex-shrink: 0;
+}
+.context-help summary:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.context-help summary:active {
+  background: var(--raised);
+}
+.help-description {
+  margin: 4px 0 12px;
+  padding: 12px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.help-tooltip {
+  display: none;
+}
+@media (pointer: coarse) {
+  button,
+  .button {
+    min-height: 48px;
+    min-width: 48px;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .context-help:not([open]):not([data-help-dismissed]) summary:is(:hover, :focus-visible) .help-tooltip {
+    display: block;
+    position: absolute;
+    z-index: 10;
+    bottom: calc(100% + 4px);
+    left: 0;
+    width: min(20rem, calc(100vw - 64px));
+    padding: 12px;
+    background: var(--raised);
+    color: var(--chalk);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    pointer-events: none;
+  }
 }
 .nav-item.active {
   color: var(--chalk);

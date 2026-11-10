@@ -1,6 +1,58 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { HostFixture } from "./host-fixture";
+
+test("context help works with pointer, keyboard, Escape and unique decorative icons", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /^Desktop/ }).click();
+  const details = page.locator("#desktop-help");
+  const trigger = details.locator("summary");
+  const tooltip = details.locator(".help-tooltip");
+  await trigger.hover();
+  await expect(tooltip).toBeVisible();
+  await trigger.focus();
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toBeHidden();
+  await page.keyboard.press("Enter");
+  await expect(details).toHaveAttribute("open", "");
+  await expect(details.locator(".help-description")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(details).not.toHaveAttribute("open", "");
+  await expect(trigger).toBeFocused();
+  const ids = await page.locator("svg [id]").evaluateAll((nodes) => nodes.map((node) => node.id));
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(await page.locator('svg:not([aria-hidden="true"])').count()).toBe(0);
+  const license = await page.request.get("/kubai-icons-LICENSE.txt");
+  expect(license.ok()).toBe(true);
+  expect(await license.text()).toContain("Copyright (c) 2026 Kubai087");
+});
+
+test("touch help needs no hover at narrow widths and larger text", async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 320, height: 800 },
+    hasTouch: true,
+    isMobile: true,
+    reducedMotion: "reduce",
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto("http://127.0.0.1:4173/");
+    await page.getByRole("button", { name: /^Terminal/ }).tap();
+    const details = page.locator("#terminal-help");
+    const trigger = details.locator("summary");
+    await trigger.evaluate((element) => { element.style.fontSize = "20px"; });
+    await trigger.tap();
+    await expect(details.locator(".help-description")).toContainText("Switching tools keeps the shell open");
+    await expect(details.locator(".help-description")).toBeVisible();
+    await expect(details.locator(".help-tooltip")).toBeHidden();
+    expect((await trigger.boundingBox())!.height).toBeGreaterThanOrEqual(48);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await trigger.tap();
+    await expect(details.locator(".help-description")).toBeHidden();
+  } finally {
+    await context.close();
+  }
+});
 async function connect(page: Page, fixture: HostFixture, hash = true) {
   await page.goto(hash ? `/#${fixture.fragment()}` : "/");
   if (!hash)

@@ -54,6 +54,7 @@ def write_archive(destination: Path, root: str, files: list[tuple[Path, str]], e
     repo=Path(__file__).resolve().parent.parent
     files=list(files)+[(repo/name,name) for name in ("LICENSE","THIRD_PARTY.md","README.md","README.zh-CN.md","docs/platforms.md") if (repo/name).is_file()]
     files += [(repo / "assets" / "branding" / name, f"branding/{name}") for name in ("icon.png", "icon.ico", "README.md")]
+    files += [(repo / "assets" / "icons" / "LICENSE", "assets/icons/LICENSE")]
     notice_path = f"{root}/UNSIGNED.txt"
     if destination.suffix == ".zip":
         with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:

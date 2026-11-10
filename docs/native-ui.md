@@ -114,6 +114,34 @@ terminal, document picking and local file transfers are deliberately absent;
 adding these requires real platform implementation and device validation, not
 desktop filesystem paths. See `docs/android.md`.
 
+## Icons and contextual help
+
+The primary task remains explicit remote access, not icon exploration. Existing
+workspace state and connection/operation owners are unchanged. Shared controls
+provide static Kubai SVGs, named workspace tabs and contextual help. Desktop
+hover or keyboard focus shows NSH's Tooltip; pressing the same named, 48-point
+help trigger expands inline text. Touch uses the inline disclosure, not hover
+or long press. A second press collapses it. There is no ornamental motion or
+automatic remote action. The web equivalent uses native details/summary,
+pointer-only tooltip styling and Escape dismissal with focus retained.
+Native Session and Android permissions also expose the full MIT icon notice
+through an optional Icon licenses disclosure; long license text is not a tooltip.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Text-only native tabs and a different web icon style | Shared static Kubai icons plus short visible tab labels | Recognizable tools without sacrificing discoverability or accessible names |
+| Persistent desktop input and terminal instructions | Short safety line plus Desktop / Terminal help | Keep escape and destructive-process behavior visible; defer secondary explanation |
+| Help that would require a mouse to discover | Named help trigger expands on click, keyboard or touch | A mobile user can read the same information without a hover gesture |
+| Repeated lengthy session explanation | Session help disclosure | Less reading during an established session, with details still available |
+| Potential animated icon runtime | Six bundled static MIT SVGs | No new JS runtime, hover-only promises or distractions during remote input |
+
+Permission denials, host guidance, transfer outcomes, invitation secrecy,
+clipboard replacement and the experimental Android feature boundary remain
+visible. Connection, transfer and stop actions retain labels. Icon-only help is
+deliberately avoided on touch. Inactive terminal workspaces remain invisible,
+not display:none. Platform keyboard-navigation limitations noted above still
+apply; these changes do not establish Windows or Android device validation.
+
 ## Verification
 
 Use native headless interaction tests for role/name navigation, disabled
@@ -123,10 +151,12 @@ tests separately. Headless results do not establish the actual OS appearance,
 screen-reader behavior, signing, hosted CI or Cloudflare deployment. Record
 unavailable real-window evidence explicitly.
 
-Local Linux evidence for this revision: 32 native interaction/unit tests and
+Local Linux evidence for this revision: 33 native interaction/unit tests and
 native Clippy pass; the application was launched through GTK/X11 and its own
 1120×860-requested window was captured at the host-constrained 1280×720 size.
 `docs/screenshots/native-desktop.png` shows the disconnected light appearance.
 The session-bus and ibus modules were unavailable in that environment. This
 verifies a real app-window render only, not remote capture/input, screen-reader
 operation, Windows/macOS runtime behavior or complete light/dark visual parity.
+The Web production screenshots include pointer help and a touch-expanded help
+panel; see `docs/screenshots/README.md` and `npm --prefix web run screenshots`.

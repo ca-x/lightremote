@@ -12,7 +12,33 @@
 验证和签名状态分别记录在 [CAPABILITIES.md](CAPABILITIES.md)。桌面、Shell、
 文件、剪贴板和截图都是应用层 profile，不修改 TMP 通用协议。
 
-![Web 工作台](docs/screenshots/web-desktop.png)
+## 界面截图
+
+### 原生桌面端
+
+![使用 Kubai 工作区图标的 roc-remote 原生桌面端](docs/screenshots/native-desktop.png)
+
+Linux GTK/X11 实际窗口，当前未连接。工作区图标保留简短名称，辅助说明收进上下文帮助。
+截图只证明本地界面显示，不代表远程桌面功能已完成真机验收。
+
+### Web 控制端
+
+![使用 Kubai 工作区图标的 Web 工作台](docs/screenshots/web-desktop.png)
+
+<details>
+<summary>查看桌面 tooltip 与移动端点击说明</summary>
+
+![桌面 Web 的上下文 tooltip](docs/screenshots/web-help.png)
+
+<img src="docs/screenshots/web-mobile.png" width="390" alt="移动 Web 终端，点击帮助后展开说明，不依赖悬停">
+
+触摸设备点击带标签的帮助按钮即可展开完整说明，不需要 hover 或长按。
+这里展示的是响应式 Web，不是 Android 真机截图；Android 原生端仍是实验性只读查看器。
+
+</details>
+
+以上截图采集于 2026 年 11 月 10 日，来自本地工作树构建。
+复现方式和验证边界见[截图说明](docs/screenshots/README.md)。
 
 从 [GitHub Releases](https://github.com/ca-x/roc-remote/releases) 下载编译后的包：
 `roc-remote-native` 是 NSH 原生控制端，`roc-remote` 是桌面主机与 CLI，

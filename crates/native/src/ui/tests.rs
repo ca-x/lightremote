@@ -339,8 +339,44 @@ fn mobile_preview_is_explicit_read_only_and_keeps_connection_reachable() -> Resu
         assert!(!app.screen().enabled("role:button[Connect]")?);
         assert!(!app.screen().shows("Upload file"));
         assert!(!app.screen().shows("Open shell"));
+        app.press("role:button[Viewing help]")?;
+        app.wait_for("This preview shows host display 0. Capture starts only when you ask. Stop viewing ends the stream; Disconnect ends the session.")?;
+        app.press("role:button[Viewing help]")?;
         app.type_text("label:Invitation", "not-an-invitation")?;
         assert!(app.screen().enabled("role:button[Connect]")?);
+    }
+    Ok(())
+}
+
+#[component]
+fn HelpExample() -> impl IntoElement {
+    help("Viewing help", "Choose a display, then start viewing.")
+}
+
+#[test]
+fn help_disclosure_opens_with_keyboard_and_closes_with_a_second_press() -> Result<(), String> {
+    for dark in [false, true] {
+        let mut app = start::<HelpExample>(dark, true);
+        app.wait_for("Viewing help")?;
+        assert!(!app.screen().shows("Choose a display, then start viewing."));
+        app.press_key("tab")?;
+        app.press_key("Enter")?;
+        assert_eq!(
+            app.screen()
+                .accessibility_state("role:button[Viewing help]")?
+                .expanded,
+            Some(true)
+        );
+        app.wait_for("Choose a display, then start viewing.")?;
+        app.press_key("Space")?;
+        assert_eq!(
+            app.screen()
+                .accessibility_state("role:button[Viewing help]")?
+                .expanded,
+            Some(false)
+        );
+        app.press_key("Escape")?;
+        assert!(!app.screen().shows("Choose a display, then start viewing."));
     }
     Ok(())
 }

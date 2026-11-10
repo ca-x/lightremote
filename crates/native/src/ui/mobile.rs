@@ -40,7 +40,8 @@ pub(super) fn workspace(client: Client, snapshot: Signal<State>) -> AnyElement {
                 .child(action("Dismiss", Action::Secondary, || false, move || dismiss.dismiss_error())))
             .child(heading("Remote desktop"))
             .child(permission_notice(snapshot, "desktop"))
-            .child(hint("This preview shows host display 0. Capture starts only when you ask."))
+            .child(hint("Display 0 · Read-only · Capture starts only when you ask."))
+            .child(help("Viewing help", "This preview shows host display 0. Capture starts only when you ask. Stop viewing ends the stream; Disconnect ends the session."))
             .child(row()
                 .child(action("Start viewing", Action::Primary,
                     move || snapshot.with(|state| !state.allows("desktop") || state.desktop_running),
@@ -59,6 +60,7 @@ pub(super) fn workspace(client: Client, snapshot: Signal<State>) -> AnyElement {
             .child(action("Refresh permissions", Action::Secondary,
                 move || !snapshot.with(|state| state.connected),
                 move || refresh.send(Command::Capabilities)))
+            .child(icon_credits())
         ));
     nav_stack()
         .flex_1()

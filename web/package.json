@@ -9,6 +9,7 @@
     "build": "npm run typecheck && vite build",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
+    "screenshots": "npm run build && tsx scripts/screenshots.ts",
     "preview": "vite preview --host 127.0.0.1",
     "verify:sdk": "node scripts/verify-sdk.mjs",
     "test:rust": "tsx scripts/rust-smoke.ts"

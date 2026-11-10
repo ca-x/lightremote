@@ -19,7 +19,9 @@ mod controls;
 mod mobile;
 #[cfg(test)]
 mod tests;
-use controls::{Action, action, choice, field, heading, hint, panel, row};
+use controls::{
+    Action, action, choice, field, heading, help, hint, icon, icon_credits, panel, row,
+};
 
 pub fn root() -> nsh_core::element::Root {
     nsh_core::element::Root::of::<App>().tokens(
@@ -254,6 +256,7 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
             let release = release_for_navigation.clone();
             tabs.child(
                 tab()
+                    .accessibility_label(label)
                     .when(workspace == Workspace::Desktop, |tab| {
                         tab.element_ref(&desktop_tab)
                     })
@@ -266,6 +269,9 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
                     .px_4()
                     .py_2()
                     .min_h_11()
+                    .flex_row()
+                    .gap_2()
+                    .items_center()
                     .rounded_md()
                     .bg(move || {
                         if selected.get() == workspace {
@@ -276,6 +282,7 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
                     })
                     .focus(|style| style.outline(px(2.0)).outline_color(move || theme().ring))
                     .active(|style| style.opacity(0.65))
+                    .child(icon(label))
                     .child(
                         text(label)
                             .text_sm()
@@ -334,7 +341,8 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
                 .into_element())
             .child(row().child(text(move || if input_active.get() { "Remote input active" } else { "Remote input released" }).text_sm())
                 .child(action("Release input", Action::Secondary, move || !input_active.get(), move || { release_control.release_input(); input_active.set(false); })))
-            .child(hint("Click to control when permitted. Ctrl+Alt+Esc returns to local controls. Changing focus releases held keys and buttons."))
+            .child(hint("Ctrl+Alt+Esc · Release remote input"))
+            .child(help("Desktop help", "Click to control when permitted. Ctrl+Alt+Esc returns to local controls. Changing focus releases held keys and buttons."))
             .child(panel().child(hint("Save a frame"))
                 .child(row().child(field(screenshot_path, "Save image path", "New local .jpg path"))
                     .child(action("Save image", Action::Secondary, move || screenshot_path.with(String::is_empty) || snapshot.with(|state| state.screenshot.is_empty()), move || save_image.send(Command::SaveScreenshot(PathBuf::from(screenshot_path.get_untracked()))))))
@@ -352,7 +360,8 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
                 .child(action("Open shell", Action::Primary, move || snapshot.with(|state| !state.allows("shell") || state.shell_running), move || open_shell.send(Command::OpenShell)))
                 .child(action("Close shell", Action::Danger, move || !snapshot.with(|state| state.shell_running), move || close_shell.send(Command::CloseShell)))
                 .child(action("Interrupt · Ctrl+C", Action::Secondary, move || !snapshot.with(|state| state.shell_running), move || interrupt.send(Command::Shell(vec![3])))))
-            .child(hint("Click the terminal to type. Closing the shell ends the remote process; switching tools keeps it open."))
+            .child(hint("Closing the shell ends the remote process."))
+            .child(help("Terminal help", "Click the terminal to type. Closing the shell ends the remote process; switching tools keeps it open."))
             .child(terminal().component_ref(&terminal_ref).scrollback(1000)
                 .on_data(move |data: &SharedString| { if snapshot.with_untracked(|state| state.shell_running) { shell_keys.send(Command::Shell(data.as_bytes().to_vec())); } })
                 .on_resize(move |event: &TerminalEvent| { if let TerminalEvent::Resize(cols, rows) = event { terminal_size.set(((*cols).clamp(1,1000) as u16, (*rows).clamp(1,1000) as u16)); } })
@@ -400,7 +409,8 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
             .child(text(move || snapshot.with(State::platform_guidance)).text_sm().selectable(true))
             .child(panel().child(permissions(snapshot))
                 .child(action("Refresh permissions", Action::Secondary, move || !snapshot.with(|state| state.connected), move || caps.send(Command::Capabilities))))
-            .child(hint("Disconnect to end this session. Reconnecting never automatically repeats a file, clipboard or terminal operation."))
+            .child(help("Session help", "Disconnect to end this session. Reconnecting never automatically repeats a file, clipboard or terminal operation."))
+            .child(icon_credits())
         )))
         )
         .child(view().px_5().py_3().border_t_1().border_color(move || theme().border)

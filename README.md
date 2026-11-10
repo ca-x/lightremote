@@ -20,7 +20,34 @@ builds, automated tests, physical desktop checks and signing are tracked separat
 in [CAPABILITIES.md](CAPABILITIES.md). The application profiles are defined in
 [docs/design.md](docs/design.md); they do not extend TMP's wire protocol.
 
-![roc-remote Web controller](docs/screenshots/web-desktop.png)
+## Screenshots
+
+### Native desktop
+
+![roc-remote native desktop with Kubai workspace icons](docs/screenshots/native-desktop.png)
+
+Actual Linux GTK/X11 window, disconnected. Workspace icons retain short labels;
+secondary instructions use contextual help. This is not a remote-desktop test.
+
+### Web controller
+
+![roc-remote Web controller with Kubai workspace icons](docs/screenshots/web-desktop.png)
+
+<details>
+<summary>Desktop tooltips and touch-friendly help</summary>
+
+![Web desktop with a contextual tooltip](docs/screenshots/web-help.png)
+
+<img src="docs/screenshots/web-mobile.png" width="390" alt="Mobile Web terminal with help expanded by tapping, without hover">
+
+On touch screens, tap the labeled help control to read the full explanation.
+This is the responsive Web client, not an Android device screenshot. Android
+remains an experimental read-only native viewer.
+
+</details>
+
+Screenshots captured on November 10, 2026, from local working-tree builds. See
+[capture notes](docs/screenshots/README.md) for reproducibility and limitations.
 
 ## Downloads
 

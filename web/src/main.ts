@@ -7,17 +7,28 @@ import { parseInvite } from "./secure";
 import { Records, jsonFrame } from "./records";
 import { jpegDimensions } from "./jpeg";
 import { Control, object, upload, download } from "./client";
+import sessionIcon from "../../assets/icons/shield.svg?raw";
+import desktopIcon from "../../assets/icons/monitor.svg?raw";
+import terminalIcon from "../../assets/icons/terminal.svg?raw";
+import filesIcon from "../../assets/icons/folder.svg?raw";
+import infoIcon from "../../assets/icons/info.svg?raw";
 
 const icons: Record<string, string> = {
-  session:
-    '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7 8h10M7 12h6M7 16h8"/>',
-  desktop:
-    '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
-  terminal: '<path d="m5 7 5 5-5 5m8 0h6"/>',
-  files: '<path d="M3 7V4h6l3 3h9v13H3z"/>',
+  session: sessionIcon,
+  desktop: desktopIcon,
+  terminal: terminalIcon,
+  files: filesIcon,
+  info: infoIcon,
 };
-const icon = (name: string) =>
-  `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">${icons[name]}</svg>`;
+let iconSequence = 0;
+const icon = (name: string) => {
+  const instance = ++iconSequence;
+  return icons[name]
+    .replace(/ki-[a-z]+/g, (prefix) => `${prefix}-${instance}`)
+    .replace("<svg ", '<svg aria-hidden="true" focusable="false" ');
+};
+const help = (id: string, label: string, description: string) =>
+  `<details class="context-help" id="${id}"><summary>${icon("info")}<span>${label}</span><span class="help-tooltip" aria-hidden="true">${description}</span></summary><p class="help-description">${description}</p></details>`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 const button = (id: string) => $<HTMLButtonElement>(id);
@@ -57,13 +68,15 @@ $("app").innerHTML = `
       <div class="desktop-stage" id="desktop-stage"><div class="stage-empty" id="desktop-empty">${icon("desktop")}<h2>Your desktop appears here</h2><p id="desktop-message">Connect to a host, then start a view.</p></div><canvas id="desktop-canvas" tabindex="0" aria-label="Remote desktop. Enable control to send pointer and keyboard input." hidden></canvas></div>
       <div class="desktop-footer"><label class="check"><input id="enable-input" type="checkbox" disabled> Enable remote control</label><span id="desktop-status" role="status">No desktop stream</span><span class="muted small">JPEG / encrypted TMP</span></div>
       <div class="text-input-row"><label class="sr-only" for="remote-text">Text to type remotely</label><input id="remote-text" placeholder="Type text on the host, including non-Latin text" maxlength="4096"><button id="send-text" disabled>Send text</button></div>
-      <p class="field-help">Click the image to focus keyboard input. Browser shortcuts may remain local. Control releases when the view loses focus.</p>
+      <p class="field-help">Remote control releases when the view loses focus.</p>
+      ${help("desktop-help", "Desktop help", "Click the image to focus keyboard input. Browser shortcuts may remain local. Control releases when the view loses focus.")}
     </section>
     <section id="view-terminal" class="view" hidden>
       <div class="page-heading"><div><p class="eyebrow">HOST SHELL</p><h1>Terminal</h1><p class="lead">A real terminal, running as the host user.</p></div><span class="section-number">03 / TERMINAL</span></div>
       <div class="toolbar"><span class="mono small" id="terminal-status" role="status">No shell running</span><div class="toolbar-spacer"></div><button id="terminal-start" class="primary" data-connected disabled>Open terminal</button><button id="terminal-stop" disabled>Close terminal</button></div>
       <div class="terminal-frame"><div class="terminal-chrome"><span class="terminal-dot"></span><span>HOST / PTY</span><span id="terminal-size">80 × 24</span></div><div id="terminal"></div><div class="terminal-empty" id="terminal-empty">${icon("terminal")}<p>Open a terminal to begin.</p><span>The host must allow shell access.</span></div></div>
-      <p class="field-help">Terminal size follows this window. Closing the terminal ends its host process.</p>
+      <p class="field-help">Closing the terminal ends its host process.</p>
+      ${help("terminal-help", "Terminal help", "Terminal size follows this window. Switching tools keeps the shell open. Closing the terminal ends its host process.")}
     </section>
     <section id="view-files" class="view" hidden>
       <div class="page-heading"><div><p class="eyebrow">SHARED DIRECTORY</p><h1>Files</h1><p class="lead">Work inside the directory shared by your host.</p></div><span class="section-number">04 / FILES</span></div>
@@ -75,6 +88,19 @@ $("app").innerHTML = `
     </section>
   </main><footer class="app-footer"><span>ROC-REMOTE</span><span id="footer-status">Your workspace, wherever you are.</span><span>V0.1.0</span></footer>
 </div>`;
+
+document.querySelectorAll<HTMLDetailsElement>(".context-help").forEach((details) => {
+  const summary = details.querySelector("summary")!;
+  summary.addEventListener("pointerleave", () => delete details.dataset.helpDismissed);
+  summary.addEventListener("blur", () => delete details.dataset.helpDismissed);
+  details.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      details.open = false;
+      details.dataset.helpDismissed = "true";
+      summary.focus();
+    }
+  });
+});
 
 let link: Link | undefined,
   control: Control | undefined,

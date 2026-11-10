@@ -9,11 +9,16 @@ uu-remote-linux code is included.
 
 - Connect with an explicit invitation and clear the invitation field on submit.
 - Start and stop read-only viewing of host display 0; refresh host permissions.
-- Native page navigation, 44-point controls, a single scroll owner, safe-area
+- Native page navigation, 48-point action/entry/help targets, a single scroll owner, safe-area
   insets and software-keyboard avoidance.
 - No input injection, touch-to-mouse, automatic capture, clipboard, terminal,
   local file transfer or background host service. Host permissions do not make
   an unimplemented mobile feature available.
+
+Viewing help is a labeled info control: tap once to expand inline guidance and
+again to collapse. It never requires hover or long press. The read-only scope,
+unsupported features, permission failures and capture behavior remain visible
+without opening help. Icons are static bundled SVGs, not an animated JS engine.
 
 The manifest declares INTERNET and the NSH runtime's POST_NOTIFICATIONS
 permission. This viewer does not request notification consent or send

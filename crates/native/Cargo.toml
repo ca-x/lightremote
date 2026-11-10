@@ -13,7 +13,7 @@ serde_json = "1"
 sha2 = "0.10"
 tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "io-util", "fs", "time", "macros"] }
-nsh-core = { git = "https://github.com/longbridge/nsh", rev = "0e4a20bd41ee72a35515cecbf9a7fba88742d911" }
+nsh-core = { git = "https://github.com/longbridge/nsh", rev = "0e4a20bd41ee72a35515cecbf9a7fba88742d911", features = ["svg"] }
 nsh-base = { git = "https://github.com/longbridge/nsh", rev = "0e4a20bd41ee72a35515cecbf9a7fba88742d911", default-features = false, features = ["term"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
