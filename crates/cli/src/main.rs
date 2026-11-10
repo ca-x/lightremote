@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
-use lightremote_core::{HostTicket, Invite, Room, crypto::Role, link, records};
-use lightremote_services::{HostConfig, HostServices};
+use roc_remote_core::{HostTicket, Invite, Room, crypto::Role, link, records};
+use roc_remote_services::{HostConfig, HostServices};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use tokio::{io::AsyncWriteExt, task::JoinSet};
@@ -9,7 +9,7 @@ use tokio::{io::AsyncWriteExt, task::JoinSet};
 #[derive(Parser)]
 #[command(
     version,
-    about = "LightRemote: encrypted desktop, shell and files over TMP"
+    about = "roc-remote: encrypted desktop, shell and files over TMP"
 )]
 struct Args {
     #[command(subcommand)]
@@ -21,7 +21,7 @@ enum Command {
     Host {
         #[arg(long, default_value = "http://127.0.0.1:8787")]
         relay: String,
-        #[arg(long, env = "LIGHTREMOTE_RELAY_TOKEN", hide_env_values = true)]
+        #[arg(long, env = "ROC_REMOTE_RELAY_TOKEN", hide_env_values = true)]
         operator_token: String,
         #[arg(long, default_value = "http://127.0.0.1:5173/")]
         web_url: String,
@@ -42,9 +42,9 @@ enum Command {
         #[arg(long, default_value_t = 1073741824)]
         max_file_size: u64,
     },
-    /// Connect using a host's invitation. Use LIGHTREMOTE_INVITE to avoid shell history.
+    /// Connect using a host's invitation. Use ROC_REMOTE_INVITE to avoid shell history.
     Connect {
-        #[arg(long, env = "LIGHTREMOTE_INVITE", hide_env_values = true)]
+        #[arg(long, env = "ROC_REMOTE_INVITE", hide_env_values = true)]
         invite: String,
         #[command(subcommand)]
         action: Action,
@@ -73,7 +73,7 @@ enum Action {
     },
 }
 async fn control(
-    handle: &lightremote_core::LinkHandle,
+    handle: &roc_remote_core::LinkHandle,
     method: &str,
     params: Value,
 ) -> Result<Value> {
@@ -158,7 +158,7 @@ async fn run() -> Result<()> {
                         let services=services.clone();
                         workers.spawn(async move {
                             let route=incoming.route.clone();
-                            let result=lightremote::serve_stream(services,incoming).await;
+                            let result=roc_remote::serve_stream(services,incoming).await;
                             if result.is_err(){eprintln!("Service stream failed or was cancelled: {route}");}
                         });
                     }

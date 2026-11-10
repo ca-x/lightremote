@@ -52,7 +52,7 @@ Linux jobs install the development packages needed by the desktop CLI's
 `libwayland-dev`, `libegl-dev`, `pkg-config`, `libgtk-4-dev`,
 `libgstreamer1.0-dev`, `libgstreamer-plugins-base1.0-dev`, and `clang`.
 The native build command is `cargo build --locked --release --target TARGET
--p lightremote-native`; it builds source from the committed manifest and lock.
+-p roc-remote-native`; it builds source from the committed manifest and lock.
 Hosted Windows runners supply MSVC and the Windows SDK; macOS runners supply
 Xcode's command-line tools and system frameworks. The native controller
 requires macOS 14 or newer. Its NSH crates are pinned to upstream revision
@@ -73,10 +73,10 @@ The headless executable is built separately with:
 
 ```sh
 cargo build --locked --release --target TARGET --target-dir target/headless \
-  -p lightremote --no-default-features
+  -p roc-remote --no-default-features
 ```
 
-It has the same executable name, `lightremote` (`lightremote.exe` on Windows),
+It has the same executable name, `roc-remote` (`roc-remote.exe` on Windows),
 as the desktop CLI. Extract the desired archive into a separate directory;
 choose which version to put on `PATH`.
 
@@ -85,7 +85,7 @@ choose which version to put on `PATH`.
 1. Align the workspace and standalone package versions, both the root and
    `crates/relay/Cargo.lock`, and the npm manifests/lockfiles. Commit the source
    and lockfiles, then run CI; Docker copies the relay's standalone lockfile.
-2. Push a tag such as `v0.1.1` whose entire value matches `v` plus the workspace
+2. Push a tag such as `v0.1.0` whose entire value matches `v` plus the workspace
    version. Prereleases require a matching version such as `0.2.0-rc.1`.
 3. `release.yml` validates the tag, runs all CI checks and the full native
    platform matrix, then publishes the GHCR relay image.
@@ -94,9 +94,9 @@ choose which version to put on `PATH`.
 
 Each platform produces four archives, named
 `COMPONENT-vVERSION-TARGET.tar.gz` (`.zip` for Windows). Components are
-`lightremote`, `lightremote-headless`, `lightremote-native`, and
-`lightremote-relay`. The native NSH build is not a renamed CLI. The separate
-web archive is `lightremote-web-vVERSION.tar.gz`. All archives have a single
+`roc-remote`, `roc-remote-headless`, `roc-remote-native`, and
+`roc-remote-relay`. The native NSH build is not a renamed CLI. The separate
+web archive is `roc-remote-web-vVERSION.tar.gz`. All archives have a single
 containing directory and an `UNSIGNED.txt` notice. `SHA256SUMS` covers the
 complete set of 21 archives and the top-level notice. Packaging fails if an
 expected target/component is missing or an unexpected file appears.
@@ -104,13 +104,13 @@ expected target/component is missing or an unexpected file appears.
 For a local packaging check, build the executables first, then use:
 
 ```sh
-python3 scripts/release.py binaries --version v0.1.1 \
+python3 scripts/release.py binaries --version v0.1.0 \
   --target x86_64-unknown-linux-gnu \
   --binary-dir target/x86_64-unknown-linux-gnu/release \
   --headless-dir target/headless/x86_64-unknown-linux-gnu/release --output dist
-python3 scripts/release.py web --version v0.1.1 --web-dir web/dist --output dist
+python3 scripts/release.py web --version v0.1.0 --web-dir web/dist --output dist
 # Run once all five target archives have been collected:
-python3 scripts/release.py checksums --version v0.1.1 --directory dist
+python3 scripts/release.py checksums --version v0.1.0 --directory dist
 ```
 
 The packager requires Python 3.11 or newer. To check downloaded files on Linux,

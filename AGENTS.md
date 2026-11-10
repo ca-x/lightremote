@@ -1,7 +1,7 @@
-# LightRemote engineering rules
+# roc-remote engineering rules
 
 - TMP remains a transport-independent library from lib-x/tm. Put service-specific
-  behavior in versioned LightRemote application profiles, never in TMP messages.
+  behavior in versioned roc-remote application profiles, never in TMP messages.
 - Do not copy source from the reference projects: their licenses differ. Keep
   implementation original and record dependency provenance in THIRD_PARTY.md.
 - Every permission defaults off. File operations remain inside the opened share

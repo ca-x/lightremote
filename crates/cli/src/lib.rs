@@ -1,7 +1,7 @@
 //! Host adapter shared by the CLI and application acceptance tests.
 use anyhow::{Context, Result};
-use lightremote_core::IncomingStream;
-use lightremote_services::HostServices;
+use roc_remote_core::IncomingStream;
+use roc_remote_services::HostServices;
 use serde_json::json;
 
 /// Bind host-owned stream identity and cancellation to one application service.

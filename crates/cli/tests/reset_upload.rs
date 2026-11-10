@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
-use lightremote_core::{HostTicket, Room, crypto::Role, link};
-use lightremote_services::{HostConfig, HostServices};
+use roc_remote_core::{HostTicket, Room, crypto::Role, link};
+use roc_remote_services::{HostConfig, HostServices};
 use serde_json::json;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
@@ -18,8 +18,8 @@ async fn reset_after_exact_size_without_fin_never_commits_upload() -> Result<()>
         })?;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let base = format!("http://{}", listener.local_addr()?);
-        let relay = lightremote_relay::router(
-            lightremote_relay::Config::new("test-operator".into()).unwrap(),
+        let relay = roc_remote_relay::router(
+            roc_remote_relay::Config::new("test-operator".into()).unwrap(),
         )
         .unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, relay).await });
@@ -48,7 +48,7 @@ async fn reset_after_exact_size_without_fin_never_commits_upload() -> Result<()>
             let incoming = host.incoming.recv().await.context("incoming upload")?;
             let service = services.clone();
             let worker =
-                tokio::spawn(async move { lightremote::serve_stream(service, incoming).await });
+                tokio::spawn(async move { roc_remote::serve_stream(service, incoming).await });
             stream.io.write_all(&vec![7; size]).await?;
             // Wait for the exact payload in staging; FIN is deliberately withheld.
             tokio::time::timeout(Duration::from_secs(3), async {
@@ -92,10 +92,9 @@ async fn reset_after_exact_size_without_fin_never_commits_upload() -> Result<()>
             .await?;
         let incoming = host.incoming.recv().await.context("valid upload")?;
         let service = services.clone();
-        let worker =
-            tokio::spawn(async move { lightremote::serve_stream(service, incoming).await });
+        let worker = tokio::spawn(async move { roc_remote::serve_stream(service, incoming).await });
         stream.io.shutdown().await?;
-        let receipt = lightremote_core::records::read(&mut stream.io, 1024)
+        let receipt = roc_remote_core::records::read(&mut stream.io, 1024)
             .await?
             .context("valid FIN receipt")?;
         ensure!(
@@ -112,7 +111,7 @@ async fn reset_after_exact_size_without_fin_never_commits_upload() -> Result<()>
                 .open("shell", json!({"cols":80,"rows":24}))
                 .await?;
             let incoming = host.incoming.recv().await.context("shell open")?;
-            let worker = tokio::spawn(lightremote::serve_stream(services.clone(), incoming));
+            let worker = tokio::spawn(roc_remote::serve_stream(services.clone(), incoming));
             shell
                 .io
                 .write_all(b"printf 'LR_PID:%s\\n' \"$$\"; sleep 30\n")

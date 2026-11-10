@@ -232,13 +232,13 @@ impl Session {
         let reader_running = running.clone();
         session.workers.push(
             std::thread::Builder::new()
-                .name("lightremote-pty-read".into())
+                .name("roc-remote-pty-read".into())
                 .spawn(move || read_output(reader, output_tx, reader_running))?,
         );
         let master = session.master.clone();
         session.workers.push(
             std::thread::Builder::new()
-                .name("lightremote-pty-write".into())
+                .name("roc-remote-pty-write".into())
                 .spawn(move || write_input(writer, input_rx, running, master))?,
         );
         Ok(session)
@@ -457,7 +457,7 @@ impl Drop for Session {
     fn drop(&mut self) {
         if let Some(cleanup) = self.stop() {
             let _ = std::thread::Builder::new()
-                .name("lightremote-pty-cleanup".into())
+                .name("roc-remote-pty-cleanup".into())
                 .spawn(move || {
                     let _ = cleanup.run();
                 });

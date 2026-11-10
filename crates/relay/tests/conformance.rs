@@ -1,5 +1,5 @@
 use futures_util::{SinkExt, StreamExt};
-use lightremote_relay::{Config, MAX_RECORD, QUEUE_RECORDS, router};
+use roc_remote_relay::{Config, MAX_RECORD, QUEUE_RECORDS, router};
 use serde_json::Value;
 use std::time::Duration;
 use tokio_tungstenite::{
@@ -257,7 +257,7 @@ async fn expiration_and_wait_timeout_close_idle_sockets() {
 #[tokio::test]
 async fn static_client_and_explicit_origin_allowlist() {
     let dir = std::env::temp_dir().join(format!(
-        "lightremote-static-{}-{}",
+        "roc-remote-static-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -265,7 +265,7 @@ async fn static_client_and_explicit_origin_allowlist() {
             .as_nanos()
     ));
     std::fs::create_dir(&dir).unwrap();
-    std::fs::write(dir.join("index.html"), "<title>LightRemote fixture</title>").unwrap();
+    std::fs::write(dir.join("index.html"), "<title>roc-remote fixture</title>").unwrap();
     let mut config = Config::new("operator".into()).unwrap();
     config.web_dir = Some(dir.clone());
     config.allowed_origins = vec!["https://client.example".into()];
@@ -289,7 +289,7 @@ async fn static_client_and_explicit_origin_allowlist() {
     );
     assert_eq!(
         response.text().await.unwrap(),
-        "<title>LightRemote fixture</title>"
+        "<title>roc-remote fixture</title>"
     );
     assert_eq!(
         client

@@ -184,21 +184,19 @@ p {
   padding: 0 7px;
 }
 .brand-symbol {
-  font:
-    italic 34px Georgia,
-    serif;
-  letter-spacing: -4px;
-}
-.brand-symbol span {
-  color: var(--teal);
+  width: 44px;
+  height: 44px;
+  flex: none;
+  object-fit: contain;
 }
 .brand small {
   font:
-    9px/2.2 "Segoe UI",
+    8px/2.2 "Segoe UI",
     system-ui,
     sans-serif;
   display: block;
-  letter-spacing: 1.65px;
+  letter-spacing: 1.2px;
+  white-space: nowrap;
   color: var(--sage);
 }
 .workspace-label {
@@ -814,7 +812,8 @@ th:first-child {
     padding: 0;
   }
   .brand-symbol {
-    font-size: 28px;
+    width: 36px;
+    height: 36px;
   }
   .brand small {
     font-size: 8px;

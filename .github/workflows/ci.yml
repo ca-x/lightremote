@@ -31,15 +31,15 @@ jobs:
           rustup default stable
       - run: bash scripts/check.sh rust
       - name: Build real headless integration binaries
-        run: cargo build --locked --no-default-features -p lightremote -p lightremote-relay
+        run: cargo build --locked --no-default-features -p roc-remote -p roc-remote-relay
       - name: Verify CLI PTY and file session
         run: python3 scripts/e2e-cli.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-binaries
           path: |
-            target/debug/lightremote
-            target/debug/lightremote-relay
+            target/debug/roc-remote
+            target/debug/roc-remote-relay
           if-no-files-found: error
           retention-days: 3
 
@@ -128,13 +128,13 @@ jobs:
       - name: Real Chromium to Rust host
         working-directory: web
         env:
-          LIGHTREMOTE_BIN: ${{ github.workspace }}/e2e-bin/lightremote
-          LIGHTREMOTE_RELAY_BIN: ${{ github.workspace }}/e2e-bin/lightremote-relay
+          ROC_REMOTE_BIN: ${{ github.workspace }}/e2e-bin/roc-remote
+          ROC_REMOTE_RELAY_BIN: ${{ github.workspace }}/e2e-bin/roc-remote-relay
         run: npm run test:rust
       - run: npm ci
         working-directory: cloudflare
       - name: Identical external relay contract on Rust and Workers
-        run: bash deploy/test-relay-pair.sh ./e2e-bin/lightremote-relay
+        run: bash deploy/test-relay-pair.sh ./e2e-bin/roc-remote-relay
 
   docker:
     name: Build relay container
@@ -150,15 +150,15 @@ jobs:
           name: web-dist
           path: web/dist
       - name: Build Docker relay
-        run: docker build -f deploy/Dockerfile -t lightremote-relay:ci .
+        run: docker build -f deploy/Dockerfile -t roc-remote-relay:ci .
       - name: Smoke container health and static client
         run: |
-          docker run -d --name relay-ci -e LIGHTREMOTE_RELAY_TOKEN=ci-only-container-token -p 127.0.0.1:8787:8787 lightremote-relay:ci
+          docker run -d --name relay-ci -e ROC_REMOTE_RELAY_TOKEN=ci-only-container-token -p 127.0.0.1:8787:8787 roc-remote-relay:ci
           trap 'docker logs relay-ci; docker rm -f relay-ci' EXIT
           for _ in {1..50}; do
             if curl --fail --silent http://127.0.0.1:8787/healthz; then break; fi
             sleep 0.2
           done
           curl --fail --silent http://127.0.0.1:8787/healthz
-          curl --fail --silent http://127.0.0.1:8787/ -o /tmp/lightremote-client.html
-          test -s /tmp/lightremote-client.html
+          curl --fail --silent http://127.0.0.1:8787/ -o /tmp/roc-remote-client.html
+          test -s /tmp/roc-remote-client.html

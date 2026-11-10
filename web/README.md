@@ -1,4 +1,4 @@
-# LightRemote web controller
+# roc-remote web controller
 
 Browser controller for the v0.1 contract in `../docs/design.md`. Built with TypeScript, Vite, and xterm. All production dependencies are browser code; there are no Node polyfills or sibling workspace dependencies.
 
@@ -60,8 +60,8 @@ With prebuilt relay and host binaries, run:
 
 ```sh
 npm run build
-LIGHTREMOTE_BIN=/absolute/path/to/lightremote \
-LIGHTREMOTE_RELAY_BIN=/absolute/path/to/lightremote-relay \
+ROC_REMOTE_BIN=/absolute/path/to/roc-remote \
+ROC_REMOTE_RELAY_BIN=/absolute/path/to/roc-remote-relay \
 npm run test:rust
 ```
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The same dependency-free black-box contract for Rust and Wrangler/Cloudflare.
 
-LIGHTREMOTE_RELAY_TOKEN=test python3 deploy/relay-conformance.py http://127.0.0.1:8787
+ROC_REMOTE_RELAY_TOKEN=test python3 deploy/relay-conformance.py http://127.0.0.1:8787
 Uses real RFC 6455 masked binary frames, not an in-process relay mock.
 """
 import argparse
@@ -24,7 +24,7 @@ class Relay:
         self.url = urllib.parse.urlsplit(base)
         assert self.url.scheme in ('http', 'https')
         assert not self.url.query and not self.url.fragment
-        self.token = os.environ['LIGHTREMOTE_RELAY_TOKEN']
+        self.token = os.environ['ROC_REMOTE_RELAY_TOKEN']
 
     def http(self, method, path, auth=None, origin=None):
         kind = http.client.HTTPSConnection if self.url.scheme == 'https' else http.client.HTTPConnection

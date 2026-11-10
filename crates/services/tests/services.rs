@@ -1,4 +1,4 @@
-use lightremote_services::{HostConfig, HostServices};
+use roc_remote_services::{HostConfig, HostServices};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{path::Path, time::Duration};

@@ -1,9 +1,9 @@
 [package]
-name = "lightremote-services"
-version = "0.2.0"
+name = "roc-remote-services"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Permission-gated host services for LightRemote byte streams"
+description = "Permission-gated host services for roc-remote byte streams"
 license = "MIT"
 
 [features]

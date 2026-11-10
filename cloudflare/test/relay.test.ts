@@ -39,9 +39,9 @@ beforeEach(async () => {
 
 describe('relay conformance against Workers runtime', () => {
   it('fails closed without operator secret or with limits over hard ceilings', async () => {
-    expect((await worker.fetch(new Request(`${base}/healthz`), { ...env, LIGHTREMOTE_RELAY_TOKEN: '' })).status).toBe(503);
-    expect((await worker.fetch(new Request(`${base}/healthz`), { ...env, LIGHTREMOTE_SESSION_BYTES: '268435457' })).status).toBe(503);
-    expect((await worker.fetch(new Request(`${base}/healthz`), { ...env, LIGHTREMOTE_ROOM_TTL_SECONDS: '86401' })).status).toBe(503);
+    expect((await worker.fetch(new Request(`${base}/healthz`), { ...env, ROC_REMOTE_RELAY_TOKEN: '' })).status).toBe(503);
+    expect((await worker.fetch(new Request(`${base}/healthz`), { ...env, ROC_REMOTE_SESSION_BYTES: '268435457' })).status).toBe(503);
+    expect((await worker.fetch(new Request(`${base}/healthz`), { ...env, ROC_REMOTE_ROOM_TTL_SECONDS: '86401' })).status).toBe(503);
   });
   it('bounds room allocations including unused rooms', async () => {
     for (let i = 0; i < 8; i++) await create();

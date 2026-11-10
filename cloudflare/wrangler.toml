@@ -1,15 +1,15 @@
-name = "lightremote-relay"
+name = "roc-remote-relay"
 main = "src/index.ts"
 compatibility_date = "2025-10-01"
 
 [vars]
-LIGHTREMOTE_MAX_ROOMS = "128"
-LIGHTREMOTE_ROOM_TTL_SECONDS = "3600"
-LIGHTREMOTE_WAIT_SECONDS = "30"
-LIGHTREMOTE_SESSION_BYTES = "67108864"
-# LIGHTREMOTE_ALLOWED_ORIGINS = "https://remote.example.com"
-# LIGHTREMOTE_PUBLIC_ORIGIN = "https://relay.example.com"
-# Mandatory secret: wrangler secret put LIGHTREMOTE_RELAY_TOKEN
+ROC_REMOTE_MAX_ROOMS = "128"
+ROC_REMOTE_ROOM_TTL_SECONDS = "3600"
+ROC_REMOTE_WAIT_SECONDS = "30"
+ROC_REMOTE_SESSION_BYTES = "67108864"
+# ROC_REMOTE_ALLOWED_ORIGINS = "https://remote.example.com"
+# ROC_REMOTE_PUBLIC_ORIGIN = "https://relay.example.com"
+# Mandatory secret: wrangler secret put ROC_REMOTE_RELAY_TOKEN
 
 [[durable_objects.bindings]]
 name = "RELAY"

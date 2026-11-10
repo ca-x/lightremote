@@ -1,30 +1,30 @@
-# LightRemote relay
+# roc-remote relay
 
-`lightremote-relay` is a separate executable with explicit dependencies. It forwards opaque binary records between exactly one host and one controller. It cannot grant desktop, shell or filesystem permissions. The encrypted hello is itself a binary record and may arrive before the other endpoint connects.
+`roc-remote-relay` is a separate executable with explicit dependencies. It forwards opaque binary records between exactly one host and one controller. It cannot grant desktop, shell or filesystem permissions. The encrypted hello is itself a binary record and may arrive before the other endpoint connects.
 
 From the repository root:
 
 ```sh
-cargo build -p lightremote-relay
-export LIGHTREMOTE_RELAY_TOKEN="$(openssl rand -hex 32)"
-LIGHTREMOTE_WEB_DIR=web/dist cargo run -p lightremote-relay
-./deploy/smoke-relay.sh ./target/debug/lightremote-relay
+cargo build -p roc-remote-relay
+export ROC_REMOTE_RELAY_TOKEN="$(openssl rand -hex 32)"
+ROC_REMOTE_WEB_DIR=web/dist cargo run -p roc-remote-relay
+./deploy/smoke-relay.sh ./target/debug/roc-remote-relay
 ```
 
 The executable refuses to start without a nonempty operator token. It never logs tickets, payloads, Authorization headers or request URLs. Do not enable URL/header logging in a reverse proxy; role tickets occur in the WebSocket protocol request header. Protect public deployments with TLS at the reverse proxy.
 
 | Environment variable | Default | Meaning |
 | --- | --- | --- |
-| `LIGHTREMOTE_RELAY_TOKEN` | mandatory | Operator Bearer token for room creation; use a random high-entropy secret |
-| `LIGHTREMOTE_BIND` | `0.0.0.0:8787` | Listening address |
-| `LIGHTREMOTE_MAX_ROOMS` | `128` | Live rooms, including unused rooms; range 1–4096 |
-| `LIGHTREMOTE_ROOM_TTL_SECONDS` | `3600` | Absolute lifetime, range 1–86400 seconds |
-| `LIGHTREMOTE_WAIT_SECONDS` | `30` | Time after first join to pair, range 1–86400 seconds |
-| `LIGHTREMOTE_ALLOWED_ORIGINS` | empty | Comma-separated exact HTTP(S) browser origins; when populated replaces the default origin policy |
-| `LIGHTREMOTE_PUBLIC_ORIGIN` | request scheme/Host | Canonical relay origin, required behind TLS termination for same-origin browser access |
-| `LIGHTREMOTE_WEB_DIR` | disabled | Optional static directory, typically `web/dist`; serves its index at `/` |
+| `ROC_REMOTE_RELAY_TOKEN` | mandatory | Operator Bearer token for room creation; use a random high-entropy secret |
+| `ROC_REMOTE_BIND` | `0.0.0.0:8787` | Listening address |
+| `ROC_REMOTE_MAX_ROOMS` | `128` | Live rooms, including unused rooms; range 1–4096 |
+| `ROC_REMOTE_ROOM_TTL_SECONDS` | `3600` | Absolute lifetime, range 1–86400 seconds |
+| `ROC_REMOTE_WAIT_SECONDS` | `30` | Time after first join to pair, range 1–86400 seconds |
+| `ROC_REMOTE_ALLOWED_ORIGINS` | empty | Comma-separated exact HTTP(S) browser origins; when populated replaces the default origin policy |
+| `ROC_REMOTE_PUBLIC_ORIGIN` | request scheme/Host | Canonical relay origin, required behind TLS termination for same-origin browser access |
+| `ROC_REMOTE_WEB_DIR` | disabled | Optional static directory, typically `web/dist`; serves its index at `/` |
 
-An absent Origin is allowed for native clients, which still need role tickets. By default browser Origin must match the relay origin or be `localhost`, `127.0.0.1`, or `[::1]` on any port. `Origin: null`, malformed origins, wildcards and non-HTTP(S) origins are rejected. To restrict production clients, configure an explicit allowlist; loopback then has no implicit exemption. Reverse proxy forwarded headers are not trusted: configure `LIGHTREMOTE_PUBLIC_ORIGIN` to the external HTTPS origin.
+An absent Origin is allowed for native clients, which still need role tickets. By default browser Origin must match the relay origin or be `localhost`, `127.0.0.1`, or `[::1]` on any port. `Origin: null`, malformed origins, wildcards and non-HTTP(S) origins are rejected. To restrict production clients, configure an explicit allowlist; loopback then has no implicit exemption. Reverse proxy forwarded headers are not trusted: configure `ROC_REMOTE_PUBLIC_ORIGIN` to the external HTTPS origin.
 
 Serving the browser client on the relay origin is convenient. A malicious or compromised relay serving that JavaScript can modify the client and steal the invitation fragment/encryption secret. Prefer serving a separately trusted, versioned client from an independent HTTPS origin, and allowlist that exact origin. End-to-end encryption protects against a relay that only forwards ciphertext; it cannot protect a client whose code the relay controls. Keep the operator token in trusted provisioning tooling; do not distribute it with a public browser bundle.
 
@@ -42,9 +42,9 @@ The Rust relay keeps room state in memory. Process restart invalidates every roo
 
 ```sh
 cargo fmt --manifest-path crates/relay/Cargo.toml -- --check
-cargo clippy -p lightremote-relay --all-targets -- -D warnings
-cargo test -p lightremote-relay
-cargo doc -p lightremote-relay --no-deps
+cargo clippy -p roc-remote-relay --all-targets -- -D warnings
+cargo test -p roc-remote-relay
+cargo doc -p roc-remote-relay --no-deps
 ```
 
 Integration tests bind real ephemeral TCP listeners and perform HTTP creation and actual WebSocket upgrades. They cover operator authentication, room quotas, origin restrictions, role isolation, protocol selection, duplicate rejection, pre-peer forwarding/overflow, bidirectional forwarding at the size boundary, simultaneous 512 KiB bursts with TCP_NODELAY on one and multiple runtime workers, stalled paired-reader deadlines, oversized/text messages, teardown, timer expiry and capacity recovery. `deploy/smoke-relay.sh` starts the executable using environment configuration and validates health, auth and creation; it accepts a binary path to avoid changing Cargo locks.

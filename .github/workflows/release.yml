@@ -115,4 +115,4 @@ jobs:
           args=()
           version="${RELEASE_TAG%%+*}"
           if [[ "$version" == *-* ]]; then args+=(--prerelease); fi
-          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG (unsigned)" --notes-file release-notes.md "${args[@]}" dist/*
+          gh release create "$RELEASE_TAG" --verify-tag --title "roc-remote $RELEASE_TAG (unsigned)" --notes-file release-notes.md "${args[@]}" dist/*

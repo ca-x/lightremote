@@ -45,7 +45,7 @@ impl Surface {
                 let class = WNDCLASSW {
                     lpfnWndProc: Some(window_proc),
                     hInstance: instance.unwrap_or_default(),
-                    lpszClassName: w!("LightRemoteDesktopInput"),
+                    lpszClassName: w!("roc-remoteDesktopInput"),
                     hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
                     ..Default::default()
                 };
@@ -53,7 +53,7 @@ impl Surface {
             });
             CreateWindowExW(
                 WINDOW_EX_STYLE(0),
-                w!("LightRemoteDesktopInput"),
+                w!("roc-remoteDesktopInput"),
                 w!(""),
                 WS_POPUP | WS_CLIPSIBLINGS,
                 0,

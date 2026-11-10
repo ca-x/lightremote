@@ -53,6 +53,7 @@ fn disconnected_tools_are_disabled_in_light_and_dark() -> Result<(), String> {
     for dark in [false, true] {
         let mut app = start::<App>(dark, true);
         app.wait_for("Not connected")?;
+        assert!(app.screen().shows("roc-remote"));
         assert!(!app.screen().enabled("role:button[Connect]")?);
         assert!(!app.screen().enabled("role:button[Start viewing]")?);
         assert!(!app.screen().enabled("role:button[Capture once]")?);

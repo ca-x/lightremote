@@ -1,11 +1,11 @@
 [package]
-name = "lightremote-native"
+name = "roc-remote-native"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-lightremote-core = { path = "../core" }
+roc-remote-core = { path = "../core" }
 anyhow = "1"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
@@ -29,6 +29,6 @@ nsh-platform-macos = { git = "https://github.com/longbridge/nsh", rev = "0e4a20b
 [dev-dependencies]
 nsh-engine = { git = "https://github.com/longbridge/nsh", rev = "0e4a20bd41ee72a35515cecbf9a7fba88742d911", default-features = false }
 nsh-testing = { git = "https://github.com/longbridge/nsh", rev = "0e4a20bd41ee72a35515cecbf9a7fba88742d911", default-features = false }
-lightremote-relay = { path = "../relay" }
+roc-remote-relay = { path = "../relay" }
 axum = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }

@@ -1,4 +1,9 @@
-# LightRemote
+# roc-remote
+
+<p><img src="assets/branding/icon.png" width="96" height="96" alt="roc-remote eagle logo"></p>
+
+Previously LightRemote. See [the migration notes](docs/rebranding.md) for new
+binary names and `ROC_REMOTE_*` environment variables; wire profiles are unchanged.
 
 [简体中文](README.zh-CN.md)
 
@@ -6,21 +11,21 @@ Remote desktop, terminal and files over [TMP](https://github.com/lib-x/tm), with
 a browser controller and an NSH native controller. The host is written in Rust.
 Run your own relay in Docker or deploy the compatible Cloudflare Worker.
 
-**Early development, v0.2.0.** JPEG desktop streaming is experimental. Platform
+**Early development, v0.1.0.** JPEG desktop streaming is experimental. Platform
 builds, automated tests, physical desktop checks and signing are tracked separately
 in [CAPABILITIES.md](CAPABILITIES.md). The application profiles are defined in
 [docs/design.md](docs/design.md); they do not extend TMP's wire protocol.
 
-![LightRemote Web controller](docs/screenshots/web-desktop.png)
+![roc-remote Web controller](docs/screenshots/web-desktop.png)
 
 ## Downloads
 
-Get compiled archives from [GitHub Releases](https://github.com/ca-x/lightremote/releases).
-Choose `lightremote-native` for the NSH controller, `lightremote` for the desktop
-host/CLI, `lightremote-headless` for a shell/files host without GUI dependencies,
-or `lightremote-relay` for a self-hosted relay. `lightremote-web` contains static
+Get compiled archives from [GitHub Releases](https://github.com/ca-x/roc-remote/releases).
+Choose `roc-remote-native` for the NSH controller, `roc-remote` for the desktop
+host/CLI, `roc-remote-headless` for a shell/files host without GUI dependencies,
+or `roc-remote-relay` for a self-hosted relay. `roc-remote-web` contains static
 browser assets. Platform and architecture appear in every binary archive name.
-The desktop CLI and headless CLI both contain an executable named `lightremote`;
+The desktop CLI and headless CLI both contain an executable named `roc-remote`;
 extract them into separate directories.
 
 ## Run a local session
@@ -32,16 +37,16 @@ cd web
 npm ci
 npm run build
 cd ..
-cargo build -p lightremote-relay -p lightremote --no-default-features
-export LIGHTREMOTE_RELAY_TOKEN="$(openssl rand -hex 32)"
-LIGHTREMOTE_WEB_DIR=web/dist ./target/debug/lightremote-relay
+cargo build -p roc-remote-relay -p roc-remote --no-default-features
+export ROC_REMOTE_RELAY_TOKEN="$(openssl rand -hex 32)"
+ROC_REMOTE_WEB_DIR=web/dist ./target/debug/roc-remote-relay
 ```
 
 In another terminal, use the same operator token and start a single-use host:
 
 ```sh
-export LIGHTREMOTE_RELAY_TOKEN='<the operator token>'
-./target/debug/lightremote host \
+export ROC_REMOTE_RELAY_TOKEN='<the operator token>'
+./target/debug/roc-remote host \
   --relay http://127.0.0.1:8787 \
   --web-url http://127.0.0.1:8787/ \
   --share-dir "$HOME/Downloads" --allow-shell --allow-write
@@ -56,8 +61,8 @@ the operating-system permissions of the host process.
 For screen capture and input, build with desktop support and enable them:
 
 ```sh
-cargo build -p lightremote
-./target/debug/lightremote host --relay https://relay.example.com \
+cargo build -p roc-remote
+./target/debug/roc-remote host --relay https://relay.example.com \
   --web-url https://client.example.com/ --allow-desktop --allow-input \
   --allow-clipboard --share-dir "$HOME/Downloads"
 ```
@@ -74,15 +79,15 @@ terminal, file upload/download and explicit clipboard actions. It accepts an
 invitation URL or its fragment. Build and launch the native NSH controller:
 
 ```sh
-cargo run -p lightremote-native
+cargo run -p roc-remote-native
 ```
 
 The CLI can also consume an invitation. A CLI command uses the room's single
 controller slot, so use a fresh host session for another connection:
 
 ```sh
-export LIGHTREMOTE_INVITE='<invitation URL>'
-./target/debug/lightremote connect capabilities
+export ROC_REMOTE_INVITE='<invitation URL>'
+./target/debug/roc-remote connect capabilities
 # Other actions: ls, get <remote> <local>, put <local> <remote>, shell,
 # screenshot <output.jpg>.
 ```

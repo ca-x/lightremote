@@ -18,10 +18,14 @@ fn main() -> impl std::process::Termination {
     platform::run_app(
         platform::AppSource::Rust(ui::root()),
         platform::AppOptions {
-            title: "LightRemote".into(),
+            title: "roc-remote".into(),
             components: surface::components(),
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
-            app_id: "org.libx.lightremote".into(),
+            app_id: "io.github.cax.roc_remote".into(),
+            #[cfg(target_os = "windows")]
+            icon: std::env::current_exe().ok().and_then(|path| {
+                path.parent()
+                    .map(|directory| directory.join("branding/icon.ico"))
+            }),
             size: (1120, 860),
             ..Default::default()
         },

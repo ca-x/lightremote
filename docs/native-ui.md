@@ -27,7 +27,7 @@ viewport controls, capability-negotiated codecs, adaptive video quality, and
 latency telemetry based on measurements. These need separate application-profile
 specs and platform validation; this change does not claim to implement them.
 Do not adopt short control codes, relay-terminated plaintext, privileged host
-defaults or automatic side-effect replay. Keep LightRemote's encrypted carrier,
+defaults or automatic side-effect replay. Keep roc-remote's encrypted carrier,
 TMP runtime and permission-gated host services separate.
 
 ## Foundations

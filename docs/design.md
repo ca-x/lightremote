@@ -1,4 +1,4 @@
-# LightRemote v0.1 architecture and acceptance
+# roc-remote v0.1 architecture and acceptance
 
 Status: implementation contract, independent evaluation in docs/review.md. Date: 2026-11-07.
 

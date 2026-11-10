@@ -19,8 +19,8 @@ TARGETS = (
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
 )
-COMPONENTS = ("lightremote", "lightremote-headless", "lightremote-native", "lightremote-relay")
-NOTICE = """LightRemote unsigned distribution
+COMPONENTS = ("roc-remote", "roc-remote-headless", "roc-remote-native", "roc-remote-relay")
+NOTICE = """roc-remote unsigned distribution
 
 These binaries are not signed by the publisher. Windows builds have no
 Authenticode signature. macOS builds are not Developer ID signed or notarized;
@@ -28,10 +28,10 @@ any toolchain ad-hoc signature does not establish publisher identity.
 SHA256SUMS detects corruption but does not authenticate a download or publisher.
 No detached signatures are produced by this release process.
 
-Desktop CLI: lightremote (default Cargo features).
-Headless CLI: lightremote built with --no-default-features, in a separate archive.
-Native controller: lightremote-native, built from NSH source.
-Relay: lightremote-relay. Web: compiled browser assets in the web archive.
+Desktop CLI: roc-remote (default Cargo features).
+Headless CLI: roc-remote built with --no-default-features, in a separate archive.
+Native controller: roc-remote-native, built from NSH source.
+Relay: roc-remote-relay. Web: compiled browser assets in the web archive.
 Linux GNU builds need a compatible glibc. Desktop/native builds additionally
 need the system libraries described in docs/distribution.md in the source tree.
 """
@@ -53,6 +53,7 @@ def write_archive(destination: Path, root: str, files: list[tuple[Path, str]], e
     destination.parent.mkdir(parents=True, exist_ok=True)
     repo=Path(__file__).resolve().parent.parent
     files=list(files)+[(repo/name,name) for name in ("LICENSE","THIRD_PARTY.md","README.md","README.zh-CN.md","docs/platforms.md") if (repo/name).is_file()]
+    files += [(repo / "assets" / "branding" / name, f"branding/{name}") for name in ("icon.png", "icon.ico", "README.md")]
     notice_path = f"{root}/UNSIGNED.txt"
     if destination.suffix == ".zip":
         with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -68,7 +69,7 @@ def write_archive(destination: Path, root: str, files: list[tuple[Path, str]], e
             archive.addfile(notice, io.BytesIO(data))
             for source, name in files:
                 entry = archive.gettarinfo(str(source), f"{root}/{name}")
-                entry.mode = 0o755 if executable and name in ("lightremote","lightremote-native","lightremote-relay") else 0o644
+                entry.mode = 0o755 if executable and name in ("roc-remote","roc-remote-native","roc-remote-relay") else 0o644
                 entry.uid = entry.gid = 0
                 entry.uname = entry.gname = ""
                 with source.open("rb") as stream:
@@ -78,10 +79,10 @@ def write_archive(destination: Path, root: str, files: list[tuple[Path, str]], e
 def package_binaries(args: argparse.Namespace) -> None:
     extension = ".exe" if "windows" in args.target else ""
     binaries = {
-        "lightremote": (args.binary_dir / f"lightremote{extension}", f"lightremote{extension}"),
-        "lightremote-headless": (args.headless_dir / f"lightremote{extension}", f"lightremote{extension}"),
-        "lightremote-native": (args.binary_dir / f"lightremote-native{extension}", f"lightremote-native{extension}"),
-        "lightremote-relay": (args.binary_dir / f"lightremote-relay{extension}", f"lightremote-relay{extension}"),
+        "roc-remote": (args.binary_dir / f"roc-remote{extension}", f"roc-remote{extension}"),
+        "roc-remote-headless": (args.headless_dir / f"roc-remote{extension}", f"roc-remote{extension}"),
+        "roc-remote-native": (args.binary_dir / f"roc-remote-native{extension}", f"roc-remote-native{extension}"),
+        "roc-remote-relay": (args.binary_dir / f"roc-remote-relay{extension}", f"roc-remote-relay{extension}"),
     }
     for source, _ in binaries.values():
         if not source.is_file():
@@ -102,7 +103,7 @@ def package_web(args: argparse.Namespace) -> None:
             raise ValueError(f"web artifact must not contain symlinks: {path}")
         if path.is_file():
             files.append((path, path.relative_to(args.web_dir).as_posix()))
-    root = f"lightremote-web-{args.version}"
+    root = f"roc-remote-web-{args.version}"
     destination = args.output / f"{root}.tar.gz"
     write_archive(destination, root, files)
     print(destination)
@@ -114,7 +115,7 @@ def checksums(args: argparse.Namespace) -> None:
         for target in TARGETS
         for component in COMPONENTS
     }
-    expected.add(f"lightremote-web-{args.version}.tar.gz")
+    expected.add(f"roc-remote-web-{args.version}.tar.gz")
     actual = {path.name for path in args.directory.iterdir() if path.is_file()}
     missing = expected - actual
     unexpected = actual - expected - {"UNSIGNED.txt", "SHA256SUMS"}

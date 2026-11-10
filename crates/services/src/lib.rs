@@ -1,4 +1,4 @@
-//! Host services for LightRemote, independent of the TMP actor.
+//! Host services for roc-remote, independent of the TMP actor.
 //!
 //! [`HostServices::serve`] accepts transport-independent [`ServiceIo`]. The
 //! adapter preserves verified FIN as EOF and RESET/carrier failure as I/O errors.

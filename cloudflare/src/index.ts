@@ -2,13 +2,13 @@
 // bounded room registry: arbitrary room IDs cannot allocate additional objects.
 export interface Env {
   RELAY: DurableObjectNamespace;
-  LIGHTREMOTE_RELAY_TOKEN: string;
-  LIGHTREMOTE_MAX_ROOMS?: string;
-  LIGHTREMOTE_ROOM_TTL_SECONDS?: string;
-  LIGHTREMOTE_WAIT_SECONDS?: string;
-  LIGHTREMOTE_SESSION_BYTES?: string;
-  LIGHTREMOTE_ALLOWED_ORIGINS?: string;
-  LIGHTREMOTE_PUBLIC_ORIGIN?: string;
+  ROC_REMOTE_RELAY_TOKEN: string;
+  ROC_REMOTE_MAX_ROOMS?: string;
+  ROC_REMOTE_ROOM_TTL_SECONDS?: string;
+  ROC_REMOTE_WAIT_SECONDS?: string;
+  ROC_REMOTE_SESSION_BYTES?: string;
+  ROC_REMOTE_ALLOWED_ORIGINS?: string;
+  ROC_REMOTE_PUBLIC_ORIGIN?: string;
 }
 const MAX_RECORD = 150_000;
 const QUEUE_RECORDS = 8;
@@ -35,10 +35,10 @@ function limits(env: Env): Limits {
     return n;
   };
   return {
-    rooms: number(env.LIGHTREMOTE_MAX_ROOMS, 128, 4096),
-    ttl: number(env.LIGHTREMOTE_ROOM_TTL_SECONDS, 3600, 86400) * 1000,
-    wait: number(env.LIGHTREMOTE_WAIT_SECONDS, 30, 86400) * 1000,
-    bytes: number(env.LIGHTREMOTE_SESSION_BYTES, 64 * 1024 * 1024, 256 * 1024 * 1024),
+    rooms: number(env.ROC_REMOTE_MAX_ROOMS, 128, 4096),
+    ttl: number(env.ROC_REMOTE_ROOM_TTL_SECONDS, 3600, 86400) * 1000,
+    wait: number(env.ROC_REMOTE_WAIT_SECONDS, 30, 86400) * 1000,
+    bytes: number(env.ROC_REMOTE_SESSION_BYTES, 64 * 1024 * 1024, 256 * 1024 * 1024),
   };
 }
 function originValue(value: string): string | undefined {
@@ -53,10 +53,10 @@ function originAllowed(request: Request, env: Env): boolean {
   if (raw === null) return true; // Native clients have no Origin; tickets remain mandatory.
   const origin = originValue(raw);
   if (!origin) return false;
-  const allow = (env.LIGHTREMOTE_ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  const allow = (env.ROC_REMOTE_ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
   if (allow.length) return allow.some(o => originValue(o) === origin);
   const host = new URL(origin).hostname;
-  return ['localhost', '127.0.0.1', '[::1]'].includes(host) || origin === (env.LIGHTREMOTE_PUBLIC_ORIGIN ? originValue(env.LIGHTREMOTE_PUBLIC_ORIGIN) : new URL(request.url).origin);
+  return ['localhost', '127.0.0.1', '[::1]'].includes(host) || origin === (env.ROC_REMOTE_PUBLIC_ORIGIN ? originValue(env.ROC_REMOTE_PUBLIC_ORIGIN) : new URL(request.url).origin);
 }
 function response(status: number): Response { return new Response(null, { status, headers: { 'Cache-Control': 'no-store' } }); }
 async function digest(value: string): Promise<string> {
@@ -110,9 +110,9 @@ function corsResponse(request: Request, original: Response): Response {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     // Fail closed even on health if the mandatory operator secret/config is absent.
-    if (!env.LIGHTREMOTE_RELAY_TOKEN?.trim()) return response(503);
+    if (!env.ROC_REMOTE_RELAY_TOKEN?.trim()) return response(503);
     try { limits(env); } catch { return response(503); }
-    const configuredOrigins = [...(env.LIGHTREMOTE_ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean), ...(env.LIGHTREMOTE_PUBLIC_ORIGIN ? [env.LIGHTREMOTE_PUBLIC_ORIGIN] : [])];
+    const configuredOrigins = [...(env.ROC_REMOTE_ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean), ...(env.ROC_REMOTE_PUBLIC_ORIGIN ? [env.ROC_REMOTE_PUBLIC_ORIGIN] : [])];
     if (configuredOrigins.some(o => !originValue(o))) return response(503);
     if (!originAllowed(request, env)) return response(403);
     const url = new URL(request.url);
@@ -122,7 +122,7 @@ export default {
     else if (url.pathname === '/v1/rooms' && request.method === 'POST') {
       const authorization = request.headers.get('Authorization');
       const bearer = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
-      if (!bearer || !equal(await digest(bearer), await digest(env.LIGHTREMOTE_RELAY_TOKEN))) return corsResponse(request, response(401));
+      if (!bearer || !equal(await digest(bearer), await digest(env.ROC_REMOTE_RELAY_TOKEN))) return corsResponse(request, response(401));
       // Body read by DO under the 1024-byte cap. Auth precedes any allocation.
       result = await env.RELAY.get(env.RELAY.idFromName('lightremote-relay.v1')).fetch(request);
     } else if (/^\/v1\/rooms\/[A-Za-z0-9_-]{43}\/ws$/.test(url.pathname) && request.method === 'GET') {
@@ -160,12 +160,12 @@ export class RelayRooms {
   }
   async fetch(request: Request): Promise<Response> {
     return this.ctx.blockConcurrencyWhile(async () => {
-      if (!this.env.LIGHTREMOTE_RELAY_TOKEN?.trim() || !originAllowed(request, this.env)) return response(403);
+      if (!this.env.ROC_REMOTE_RELAY_TOKEN?.trim() || !originAllowed(request, this.env)) return response(403);
       const url = new URL(request.url);
       await this.expire();
       if (url.pathname === '/v1/rooms' && request.method === 'POST') {
         const bearer = request.headers.get('Authorization');
-        if (!bearer || !equal(await digest(bearer), await digest(`Bearer ${this.env.LIGHTREMOTE_RELAY_TOKEN}`))) return response(401);
+        if (!bearer || !equal(await digest(bearer), await digest(`Bearer ${this.env.ROC_REMOTE_RELAY_TOKEN}`))) return response(401);
         const contentType = request.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() ?? '';
         if (contentType !== 'application/json' && !/^application\/[^;]+\+json$/.test(contentType)) return response(415);
         // Bound the streaming body before assembling/decoding it.

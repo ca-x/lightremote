@@ -2506,110 +2506,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lightremote"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "crossterm",
- "lightremote-core",
- "lightremote-relay",
- "lightremote-services",
- "reqwest",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "lightremote-core"
-version = "0.2.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "axum",
- "base64 0.22.1",
- "futures-util",
- "hkdf",
- "lightremote-relay",
- "rand 0.8.8",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tokio-tungstenite 0.28.0",
- "tunnel-mux",
- "url",
- "zeroize",
-]
-
-[[package]]
-name = "lightremote-native"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "image",
- "lightremote-core",
- "lightremote-relay",
- "nsh-base",
- "nsh-core",
- "nsh-engine",
- "nsh-platform-linux",
- "nsh-platform-macos",
- "nsh-platform-windows",
- "nsh-testing",
- "objc2-app-kit",
- "reqwest",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "lightremote-relay"
-version = "0.2.0"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "futures-util",
- "rand 0.8.8",
- "reqwest",
- "serde",
- "serde_json",
- "subtle",
- "tokio",
- "tokio-tungstenite 0.28.0",
- "tower-http",
- "url",
-]
-
-[[package]]
-name = "lightremote-services"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "arboard",
- "cap-fs-ext",
- "cap-std",
- "enigo",
- "image",
- "libc",
- "portable-pty",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "uuid",
- "xcap",
-]
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4068,6 +3964,110 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "roc-remote"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "crossterm",
+ "reqwest",
+ "roc-remote-core",
+ "roc-remote-relay",
+ "roc-remote-services",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "roc-remote-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "futures-util",
+ "hkdf",
+ "rand 0.8.8",
+ "reqwest",
+ "roc-remote-relay",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tokio-tungstenite 0.28.0",
+ "tunnel-mux",
+ "url",
+ "zeroize",
+]
+
+[[package]]
+name = "roc-remote-native"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "image",
+ "nsh-base",
+ "nsh-core",
+ "nsh-engine",
+ "nsh-platform-linux",
+ "nsh-platform-macos",
+ "nsh-platform-windows",
+ "nsh-testing",
+ "objc2-app-kit",
+ "reqwest",
+ "roc-remote-core",
+ "roc-remote-relay",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "roc-remote-relay"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "futures-util",
+ "rand 0.8.8",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "subtle",
+ "tokio",
+ "tokio-tungstenite 0.28.0",
+ "tower-http",
+ "url",
+]
+
+[[package]]
+name = "roc-remote-services"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "cap-fs-ext",
+ "cap-std",
+ "enigo",
+ "image",
+ "libc",
+ "portable-pty",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "xcap",
 ]
 
 [[package]]

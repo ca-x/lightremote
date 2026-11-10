@@ -1,7 +1,7 @@
 # Platform setup and limits
 
 The portable host and native controller are separate executables. Desktop support
-is an optional host feature; `cargo build -p lightremote --no-default-features`
+is an optional host feature; `cargo build -p roc-remote --no-default-features`
 requires no capture, injection or GUI libraries.
 
 ## Linux

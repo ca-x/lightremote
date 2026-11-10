@@ -1,6 +1,11 @@
 # Sources and licenses
 
-LightRemote is an original MIT-licensed implementation. Architecture references
+The roc-remote eagle logo was supplied and approved by the project owner.
+See `assets/branding/README.md` for the original and generated size variants;
+it is not sourced from any reference project. Existing copyright notices remain
+unchanged by the rebrand.
+
+roc-remote is an original MIT-licensed implementation. Architecture references
 were read for requirements and platform constraints; their source was not copied:
 
 | Reference | Upstream license | Use |

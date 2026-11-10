@@ -44,7 +44,7 @@ pub struct Config {
 impl Config {
     pub fn new(operator_token: String) -> Result<Self, String> {
         if operator_token.trim().is_empty() {
-            return Err("LIGHTREMOTE_RELAY_TOKEN is mandatory".into());
+            return Err("ROC_REMOTE_RELAY_TOKEN is mandatory".into());
         }
         Ok(Self {
             operator_token,
@@ -57,19 +57,19 @@ impl Config {
         })
     }
     pub fn from_env() -> Result<Self, String> {
-        let mut c = Self::new(std::env::var("LIGHTREMOTE_RELAY_TOKEN").unwrap_or_default())?;
-        c.max_rooms = env_number("LIGHTREMOTE_MAX_ROOMS", 128)? as usize;
-        c.room_ttl = Duration::from_secs(env_number("LIGHTREMOTE_ROOM_TTL_SECONDS", 3600)?);
-        c.wait_timeout = Duration::from_secs(env_number("LIGHTREMOTE_WAIT_SECONDS", 30)?);
-        c.allowed_origins = std::env::var("LIGHTREMOTE_ALLOWED_ORIGINS")
+        let mut c = Self::new(std::env::var("ROC_REMOTE_RELAY_TOKEN").unwrap_or_default())?;
+        c.max_rooms = env_number("ROC_REMOTE_MAX_ROOMS", 128)? as usize;
+        c.room_ttl = Duration::from_secs(env_number("ROC_REMOTE_ROOM_TTL_SECONDS", 3600)?);
+        c.wait_timeout = Duration::from_secs(env_number("ROC_REMOTE_WAIT_SECONDS", 30)?);
+        c.allowed_origins = std::env::var("ROC_REMOTE_ALLOWED_ORIGINS")
             .unwrap_or_default()
             .split(',')
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_owned)
             .collect();
-        c.public_origin = std::env::var("LIGHTREMOTE_PUBLIC_ORIGIN").ok();
-        c.web_dir = std::env::var_os("LIGHTREMOTE_WEB_DIR").map(Into::into);
+        c.public_origin = std::env::var("ROC_REMOTE_PUBLIC_ORIGIN").ok();
+        c.web_dir = std::env::var_os("ROC_REMOTE_WEB_DIR").map(Into::into);
         c.validate()?;
         Ok(c)
     }

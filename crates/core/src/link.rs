@@ -1308,8 +1308,8 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(30), async {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
             let base = format!("http://{}", listener.local_addr()?);
-            let relay = lightremote_relay::router(
-                lightremote_relay::Config::new("test-operator".into()).unwrap(),
+            let relay = roc_remote_relay::router(
+                roc_remote_relay::Config::new("test-operator".into()).unwrap(),
             )
             .unwrap();
             let server = tokio::spawn(async move { axum::serve(listener, relay).await });

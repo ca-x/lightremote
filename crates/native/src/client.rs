@@ -2,7 +2,7 @@
 use crate::{desktop::Display, input::Bridge};
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use lightremote_core::{
+use roc_remote_core::{
     crypto::Role,
     invite::Invite,
     link::{self, LinkHandle},
@@ -97,7 +97,7 @@ impl Client {
         let input = Bridge::new();
         let network_input = input.clone();
         std::thread::Builder::new()
-            .name("lightremote-client".into())
+            .name("roc-remote-client".into())
             .spawn(move || {
                 runtime.block_on(run(receiver, output, network_input));
             })

@@ -1,4 +1,4 @@
-# LightRemote capability map
+# roc-remote capability map
 
 | Module | Responsibility | Depends on |
 | --- | --- | --- |

@@ -1,6 +1,6 @@
-# LightRemote native controller
+# roc-remote native controller
 
-A native Rust NSH application. It calls `lightremote-core` directly; it does not
+A native Rust NSH application. It calls `roc-remote-core` directly; it does not
 embed the browser client or start an installed NSH CLI. The Rust sources and OS
 platform libraries supply the UI; there are no sidecar web assets to package.
 
@@ -9,10 +9,10 @@ platform libraries supply the UI; there are no sidecar web assets to package.
 From the repository root:
 
 ```sh
-cargo build --locked --release -p lightremote-native
-cargo run --locked -p lightremote-native
-cargo test --locked -p lightremote-native
-cargo clippy --locked -p lightremote-native --all-targets --no-deps -- -D warnings
+cargo build --locked --release -p roc-remote-native
+cargo run --locked -p roc-remote-native
+cargo test --locked -p roc-remote-native
+cargo clippy --locked -p roc-remote-native --all-targets --no-deps -- -D warnings
 ```
 
 All NSH crates use the same git commit:

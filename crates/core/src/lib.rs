@@ -1,4 +1,4 @@
-//! LightRemote application profiles and encrypted TMP connections.
+//! roc-remote application profiles and encrypted TMP connections.
 pub mod crypto;
 pub mod invite;
 pub mod link;

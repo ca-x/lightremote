@@ -1,5 +1,6 @@
 //! Native NSH controls; all application data stays on the Rust side.
 use crate::client::{Client, Command, MAX_CLIPBOARD_BYTES, State, validate_clipboard_text};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use nsh_base::TerminalEvent;
 use nsh_base::{Terminal, TerminalApi, input, tab, tabs, terminal, theme};
 use nsh_core::element::NativeEvent;
@@ -107,7 +108,7 @@ pub fn App() -> impl IntoElement {
         Err(error) => {
             return view()
                 .p_6()
-                .child(text(format!("Cannot start LightRemote: {error:#}")))
+                .child(text(format!("Cannot start roc-remote: {error:#}")))
                 .into_element();
         }
     };
@@ -279,8 +280,11 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
         .child(view().gap_3().px_5().py_4().bg(move || theme().card)
             .border_b_1().border_color(move || theme().border)
             .child(row().justify_between()
-                .child(view().gap_1().child(text("LightRemote").text_xl().font_weight(FontWeight::SEMIBOLD))
-                    .child(hint("Your remote workspace. One private session.")))
+                .child(row()
+                    .child(image(format!("data:image/png;base64,{}", STANDARD.encode(include_bytes!("../../../assets/branding/icon.png"))))
+                        .size(px(44.0)).label("roc-remote logo"))
+                    .child(view().gap_1().child(text("roc-remote").text_xl().font_weight(FontWeight::SEMIBOLD))
+                        .child(hint("Your remote workspace. One private session."))))
                 .child(text(move || snapshot.with(|state| if state.connected { "Connected" } else if state.connecting { "Connecting…" } else { "Not connected" }))
                     .text_sm().font_weight(FontWeight::SEMIBOLD).px_3().py_2().rounded_full().bg(move || theme().muted)
                     .text_color(move || if snapshot.with(|state| state.connected) { theme().color("success").expect("success token") } else { theme().muted_foreground })))

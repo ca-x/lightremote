@@ -6,9 +6,9 @@ RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
 RUN useradd --system --uid 10001 relay
-COPY --from=builder /build/target/release/lightremote-relay /usr/local/bin/lightremote-relay
+COPY --from=builder /build/target/release/roc-remote-relay /usr/local/bin/roc-remote-relay
 COPY web/dist/ /web/
 USER 10001:10001
 EXPOSE 8787
-ENV LIGHTREMOTE_BIND=0.0.0.0:8787 LIGHTREMOTE_WEB_DIR=/web
-ENTRYPOINT ["lightremote-relay"]
+ENV ROC_REMOTE_BIND=0.0.0.0:8787 ROC_REMOTE_WEB_DIR=/web
+ENTRYPOINT ["roc-remote-relay"]

@@ -1,5 +1,5 @@
 [package]
-name = "lightremote-core"
+name = "roc-remote-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -21,6 +21,6 @@ url = "2"
 zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-lightremote-relay = { path = "../relay" }
+roc-remote-relay = { path = "../relay" }
 axum = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }

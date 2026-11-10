@@ -1,11 +1,11 @@
-# lightremote-services
+# roc-remote-services
 
 Host service dispatch with no dependency on the session or mux actor. Every
 permission defaults to disabled. File reads additionally require an explicit
 share directory; file mutations require `allow_write`.
 
 ```rust,no_run
-use lightremote_services::{HostConfig, HostServices};
+use roc_remote_services::{HostConfig, HostServices};
 use serde_json::json;
 use std::path::PathBuf;
 
@@ -144,11 +144,11 @@ broadcast ring; `events.lagged` explicitly reports dropped notifications.
 ## Builds and backend support
 
 ```sh
-cargo test -p lightremote-services --no-default-features
-cargo clippy -p lightremote-services --no-default-features --all-targets -- -D warnings
-cargo test -p lightremote-services
-cargo clippy -p lightremote-services --all-features --all-targets -- -D warnings
-cargo doc -p lightremote-services --no-deps
+cargo test -p roc-remote-services --no-default-features
+cargo clippy -p roc-remote-services --no-default-features --all-targets -- -D warnings
+cargo test -p roc-remote-services
+cargo clippy -p roc-remote-services --all-features --all-targets -- -D warnings
+cargo doc -p roc-remote-services --no-deps
 ```
 
 The default `desktop` feature enables real xcap capture, enigo input, arboard
@@ -179,5 +179,5 @@ display; physical desktop runtime behavior remains to be checked on a host with
 usable display/capture permissions.
 
 ```sh
-cargo test -p lightremote-services --test services desktop_backend_emits_real_jpeg_single_fin_and_stream_disconnect -- --ignored
+cargo test -p roc-remote-services --test services desktop_backend_emits_real_jpeg_single_fin_and_stream_disconnect -- --ignored
 ```

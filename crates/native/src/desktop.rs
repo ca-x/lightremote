@@ -10,7 +10,7 @@ pub const MAX_FRAME_PIXELS: u64 = 16_777_216;
 /// Encoded record bounds alone do not bound the decoder's raster allocation.
 pub fn admit_jpeg(bytes: &[u8]) -> Result<(u32, u32)> {
     ensure!(
-        !bytes.is_empty() && bytes.len() <= lightremote_core::records::MAX_RECORD,
+        !bytes.is_empty() && bytes.len() <= roc_remote_core::records::MAX_RECORD,
         "Desktop JPEG exceeds encoded record limit"
     );
     ensure!(
@@ -154,7 +154,7 @@ mod tests {
         );
         assert!(admit_jpeg(&[]).is_err());
         assert!(admit_jpeg(&[0xff, 0xd8, 0xff, 0xd9]).is_err());
-        assert!(admit_jpeg(&vec![0; lightremote_core::records::MAX_RECORD + 1]).is_err());
+        assert!(admit_jpeg(&vec![0; roc_remote_core::records::MAX_RECORD + 1]).is_err());
     }
     #[test]
     fn scaled_letterbox_maps_to_selected_display_without_double_offset() {

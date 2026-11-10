@@ -1,4 +1,4 @@
-use lightremote_core::{
+use roc_remote_core::{
     crypto::Role,
     invite::{HostTicket, Room},
     link,
@@ -10,8 +10,8 @@ async fn encrypted_mux_large_bidirectional_half_close() -> anyhow::Result<()> {
     tokio::time::timeout(std::time::Duration::from_secs(20), async {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
-        let relay = lightremote_relay::router(
-            lightremote_relay::Config::new("test-operator".into()).unwrap(),
+        let relay = roc_remote_relay::router(
+            roc_remote_relay::Config::new("test-operator".into()).unwrap(),
         )
         .unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, relay).await });

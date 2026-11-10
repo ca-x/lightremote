@@ -1,10 +1,10 @@
 [package]
-name = "lightremote-relay"
-version = "0.2.0"
+name = "roc-remote-relay"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
-description = "Bounded authenticated WebSocket rendezvous for LightRemote"
+description = "Bounded authenticated WebSocket rendezvous for roc-remote"
 
 [dependencies]
 axum = { version = "0.8.6", features = ["ws"] }

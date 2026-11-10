@@ -4,6 +4,6 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [cloudflareTest({
     wrangler: { configPath: './wrangler.toml' },
-    miniflare: { bindings: { LIGHTREMOTE_RELAY_TOKEN: 'test-operator-secret', LIGHTREMOTE_SESSION_BYTES: '300000', LIGHTREMOTE_MAX_ROOMS: '8' } },
+    miniflare: { bindings: { ROC_REMOTE_RELAY_TOKEN: 'test-operator-secret', ROC_REMOTE_SESSION_BYTES: '300000', ROC_REMOTE_MAX_ROOMS: '8' } },
   })],
 });

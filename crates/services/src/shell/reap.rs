@@ -35,7 +35,7 @@ impl Lease {
         if state.is_none() {
             let (tx, rx) = mpsc::sync_channel::<Pending>(PROCESS_LIMIT);
             std::thread::Builder::new()
-                .name("lightremote-pty-supervisor".into())
+                .name("roc-remote-pty-supervisor".into())
                 .spawn(move || supervise(rx))?;
             *state = Some(Reaper {
                 slots: Arc::new(Semaphore::new(PROCESS_LIMIT)),

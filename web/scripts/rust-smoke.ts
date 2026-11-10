@@ -6,11 +6,11 @@ import { mkdir, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-const cli = process.env.LIGHTREMOTE_BIN,
-  relayBin = process.env.LIGHTREMOTE_RELAY_BIN;
+const cli = process.env.ROC_REMOTE_BIN,
+  relayBin = process.env.ROC_REMOTE_RELAY_BIN;
 if (!cli || !relayBin)
   throw new Error(
-    "Set LIGHTREMOTE_BIN and LIGHTREMOTE_RELAY_BIN to prebuilt Rust binaries",
+    "Set ROC_REMOTE_BIN and ROC_REMOTE_RELAY_BIN to prebuilt Rust binaries",
   );
 const artifacts = resolve("test-results");
 await mkdir(artifacts, { recursive: true });
@@ -26,7 +26,7 @@ const port = address.port;
 await new Promise<void>((yes) => portServer.close(() => yes()));
 const origin = `http://127.0.0.1:${port}`;
 const token = randomBytes(32).toString("base64url");
-const env = { ...process.env, LIGHTREMOTE_RELAY_TOKEN: token };
+const env = { ...process.env, ROC_REMOTE_RELAY_TOKEN: token };
 let relay: ChildProcess | undefined, host: ChildProcess | undefined;
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 async function stop(child?: ChildProcess) {
@@ -41,9 +41,9 @@ try {
   relay = spawn(relayBin, [], {
     env: {
       ...env,
-      LIGHTREMOTE_BIND: `127.0.0.1:${port}`,
-      LIGHTREMOTE_ALLOWED_ORIGINS: origin,
-      LIGHTREMOTE_WEB_DIR: resolve("dist"),
+      ROC_REMOTE_BIND: `127.0.0.1:${port}`,
+      ROC_REMOTE_ALLOWED_ORIGINS: origin,
+      ROC_REMOTE_WEB_DIR: resolve("dist"),
     },
     stdio: ["ignore", "ignore", "pipe"],
   });

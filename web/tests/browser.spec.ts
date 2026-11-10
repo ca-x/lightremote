@@ -19,6 +19,12 @@ test("production browser boot, validation, and responsive workstation without No
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
+  await expect(page).toHaveTitle("roc-remote · Workspace");
+  const brand = page.getByRole("link", { name: "roc-remote home" });
+  await expect(brand).toBeVisible();
+  await expect
+    .poll(() => brand.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBe(256);
   await expect(
     page.getByRole("heading", { name: "Session", exact: true }),
   ).toBeVisible();

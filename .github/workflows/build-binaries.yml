@@ -53,11 +53,11 @@ jobs:
           rustup toolchain install stable --profile minimal --target "$TARGET"
           rustup default stable
       - name: Build desktop CLI and relay
-        run: cargo build --locked --release --target "$TARGET" -p lightremote -p lightremote-relay
+        run: cargo build --locked --release --target "$TARGET" -p roc-remote -p roc-remote-relay
       - name: Build native NSH controller
-        run: cargo build --locked --release --target "$TARGET" -p lightremote-native
+        run: cargo build --locked --release --target "$TARGET" -p roc-remote-native
       - name: Build headless CLI without desktop dependencies
-        run: cargo build --locked --release --target "$TARGET" --target-dir target/headless -p lightremote --no-default-features
+        run: cargo build --locked --release --target "$TARGET" --target-dir target/headless -p roc-remote --no-default-features
       - name: Package unsigned binaries
         run: |
           version="dev-$RELEASE_SHA"

@@ -1,6 +1,6 @@
 //! One ordered input stream; blur has a separate, non-droppable cancellation signal.
 use anyhow::{Context, Result, ensure};
-use lightremote_core::{
+use roc_remote_core::{
     link::{LinkHandle, MuxStream},
     records,
 };
@@ -257,7 +257,7 @@ mod tests {
     }
     #[tokio::test]
     async fn encrypted_input_blur_releases_keys_and_buttons_before_fin() -> Result<()> {
-        use lightremote_core::{
+        use roc_remote_core::{
             crypto::Role,
             invite::{HostTicket, Room},
             link,
@@ -265,8 +265,8 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(15), async {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
             let address = listener.local_addr()?;
-            let relay = lightremote_relay::router(
-                lightremote_relay::Config::new("native-test-operator".into()).unwrap(),
+            let relay = roc_remote_relay::router(
+                roc_remote_relay::Config::new("native-test-operator".into()).unwrap(),
             )
             .unwrap();
             let server = tokio::spawn(async move { axum::serve(listener, relay).await });

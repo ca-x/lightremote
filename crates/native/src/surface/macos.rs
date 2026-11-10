@@ -34,7 +34,7 @@ define_class!(
     #[unsafe(super(NSImageView))]
     #[thread_kind = MainThreadOnly]
     #[ivars = Ivars]
-    #[name = "LightRemoteDesktopInputView"]
+    #[name = "roc-remoteDesktopInputView"]
     struct DesktopView;
     unsafe impl NSObjectProtocol for DesktopView {}
     impl DesktopView {

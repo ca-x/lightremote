@@ -1,4 +1,4 @@
-# LightRemote workstation
+# roc-remote workstation
 
 1. **Theme.** Calm utility workstation. Clear operational state and a generous working surface, with no marketing content.
 2. **Palette.** Ink `#111918` canvas; raised ink `#192321` main surface; chalk `#edf2eb` text; sage `#a4b6ae` secondary; teal `#88dcc8` actions; amber `#efbc79` waiting; red `#f49b92` errors.
