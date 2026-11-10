@@ -113,6 +113,13 @@ fn invalid_invitation_reports_failure_and_clears_secret_field() -> Result<(), St
     app.wait_for("Invalid invitation. Paste the complete invitation URL or fragment.")?;
     assert_eq!(app.screen().input_text("label:Invitation")?, Some(""));
     assert!(!app.screen().enabled("role:button[Disconnect]")?);
+    assert!(app.screen().matches("role:alert")?);
+    app.press("role:button[Dismiss]")?;
+    assert!(
+        !app.screen()
+            .shows("Invalid invitation. Paste the complete invitation URL or fragment.")
+    );
+    assert!(!app.screen().matches("role:alert")?);
     Ok(())
 }
 
@@ -120,6 +127,11 @@ fn invalid_invitation_reports_failure_and_clears_secret_field() -> Result<(), St
 fn host_permissions_control_read_and_write_independently() -> Result<(), String> {
     let mut app = start::<LimitedSession>(true, true);
     app.wait_for("Connected")?;
+    assert_eq!(
+        app.screen()
+            .accessibility_level("role:header[Remote desktop]")?,
+        Some(2)
+    );
     assert!(app.screen().enabled("role:button[Start viewing]")?);
     assert!(!app.screen().enabled("role:button[Release input]")?);
     app.press("role:tab[Terminal]")?;
@@ -256,5 +268,79 @@ fn switching_tools_preserves_terminal_geometry() -> Result<(), String> {
     );
     app.press("Show terminal")?;
     assert!(app.shows(&before));
+    Ok(())
+}
+
+#[component]
+fn BusySession() -> impl IntoElement {
+    let (client, _updates) = Client::start().unwrap();
+    workspace(
+        client,
+        signal(State {
+            connected: true,
+            capabilities: json!({"file_read":true,"file_write":true,"clipboard":true}).to_string(),
+            pending: [
+                Operation::Listing,
+                Operation::Transfer,
+                Operation::Clipboard,
+            ]
+            .into_iter()
+            .collect(),
+            listing_path: "previous-directory".into(),
+            transfer_status: "Transfer in progress…".into(),
+            clipboard_status: "Clipboard request in progress…".into(),
+            ..State::default()
+        }),
+    )
+}
+
+#[test]
+fn pending_actions_disable_duplicates_and_preserve_confirmed_directory() -> Result<(), String> {
+    let mut app = start::<BusySession>(true, true);
+    app.wait_for("Connected")?;
+    assert!(!app.screen().shows("Invitation"));
+    app.press("role:tab[Files]")?;
+    app.type_text("label:Local file path", "/tmp/transfer")?;
+    assert!(!app.screen().enabled("role:button[List directory]")?);
+    assert!(!app.screen().enabled("role:button[Download file]")?);
+    assert!(!app.screen().enabled("role:button[Upload file]")?);
+    app.wait_for("Loading directory… Showing: previous-directory")?;
+    app.press("role:tab[Clipboard]")?;
+    assert!(!app.screen().enabled("role:button[Read remote]")?);
+    assert!(!app.screen().enabled("role:button[Write remote]")?);
+    app.wait_for("Clipboard request in progress…")?;
+    Ok(())
+}
+
+#[component]
+fn MobilePreview() -> impl IntoElement {
+    let (client, _updates) = Client::start().unwrap();
+    mobile::workspace(client, signal(State::default()))
+}
+
+#[test]
+fn mobile_preview_is_explicit_read_only_and_keeps_connection_reachable() -> Result<(), String> {
+    for dark in [false, true] {
+        let mut app = start::<MobilePreview>(dark, true);
+        app.set_viewport(Size::new(px(360.0), px(780.0)))?;
+        app.set_environment(
+            "Android safe area, large text and software keyboard",
+            |environment| {
+                environment.os = nsh_core::platform::Os::Android;
+                environment.idiom = nsh_core::platform::Idiom::Phone;
+                environment.font_scale = 1.3;
+                environment.safe_area.top = px(24.0);
+                environment.safe_area.bottom = px(16.0);
+                environment.keyboard_height = px(240.0);
+            },
+        )?;
+        app.wait_for("Android preview")?;
+        assert!(app.screen().shows("Experimental viewer. Touch control, clipboard, terminal and local file transfers are not available in this build."));
+        assert!(!app.screen().enabled("role:button[Connect]")?);
+        assert!(!app.screen().shows("Upload file"));
+        assert!(!app.screen().shows("Open shell"));
+        app.type_text("label:Invitation", "not-an-invitation")?;
+        assert!(app.screen().enabled("role:button[Connect]")?);
+    }
     Ok(())
 }

@@ -9,6 +9,10 @@ binary names and `ROC_REMOTE_*` environment variables; wire profiles are unchang
 
 Remote desktop, terminal and files over [TMP](https://github.com/lib-x/tm), with
 a browser controller and an NSH native controller. The host is written in Rust.
+
+An experimental Android read-only viewer can also be built from the native
+crate. It is not a mobile host or a full desktop-controller port; see
+[`docs/android.md`](docs/android.md) for scope, debug signing and device-test gaps.
 Run your own relay in Docker or deploy the compatible Cloudflare Worker.
 
 **Early development, v0.1.0.** JPEG desktop streaming is experimental. Platform

@@ -74,7 +74,7 @@ pub(crate) fn displays() -> Result<Value> {
 }
 
 pub(crate) fn probe_input() -> bool {
-    Enigo::new(&settings()).is_ok()
+    crate::platform::input_supported() && Enigo::new(&settings()).is_ok()
 }
 pub(crate) fn probe_clipboard() -> bool {
     arboard::Clipboard::new().is_ok()
@@ -306,6 +306,10 @@ impl InputState {
         slot: Arc<OwnedSemaphorePermit>,
         input: OwnedSemaphorePermit,
     ) -> Result<Self> {
+        ensure!(
+            crate::platform::input_supported(),
+            "remote input is unavailable in a Wayland session; this build requires an X11 session"
+        );
         let (_, bounds) = monitor(display)?;
         Ok(Self {
             _slot: slot,

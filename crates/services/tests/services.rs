@@ -359,6 +359,13 @@ async fn headless_capabilities_never_claim_desktop_even_when_flags_enabled() {
     for flag in ["desktop_compiled", "desktop", "input", "clipboard"] {
         assert_eq!(caps[flag], false, "{flag}");
     }
+    assert_eq!(caps["platform"]["os"], std::env::consts::OS);
+    assert!(
+        caps["platform"]["desktop_guidance"]
+            .as_str()
+            .unwrap()
+            .contains("headless build")
+    );
     for method in ["desktop.displays", "clipboard.get"] {
         assert!(
             host.control(json!({"id":1,"method":method}))

@@ -1,4 +1,6 @@
 /target
+**/target/
+**/.nsh/
 **/node_modules/
 **/dist/
 **/.wrangler/

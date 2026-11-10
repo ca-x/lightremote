@@ -10,7 +10,13 @@ use roc_remote_core::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     sync::{mpsc, oneshot, watch},
@@ -22,6 +28,13 @@ const MAX_TEXT: usize = 128 * 1024;
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 pub const MAX_CLIPBOARD_BYTES: usize = 256 * 1024;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Operation {
+    Listing,
+    Transfer,
+    Clipboard,
+}
+
 #[derive(Clone, Default, PartialEq)]
 pub struct State {
     pub connected: bool,
@@ -31,6 +44,10 @@ pub struct State {
     pub capabilities: String,
     pub displays: String,
     pub listing: String,
+    pub listing_path: String,
+    pub pending: BTreeSet<Operation>,
+    pub transfer_status: String,
+    pub clipboard_status: String,
     pub clipboard: String,
     pub clipboard_revision: u64,
     pub terminal: String,
@@ -45,6 +62,17 @@ pub struct State {
 }
 
 impl State {
+    pub fn platform_guidance(&self) -> String {
+        serde_json::from_str::<Value>(&self.capabilities)
+            .ok()
+            .and_then(|value| {
+                value["platform"]["desktop_guidance"]
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .unwrap_or_default()
+    }
+
     pub fn allows(&self, capability: &str) -> bool {
         self.connected
             && serde_json::from_str::<Value>(&self.capabilities)
@@ -121,6 +149,7 @@ impl Client {
         }
     }
 
+    #[cfg(not(target_os = "android"))]
     pub fn arm_input(&self) {
         self.input.arm();
     }
@@ -129,6 +158,7 @@ impl Client {
         self.input.release();
     }
 
+    #[cfg(not(target_os = "android"))]
     pub fn forward_input(&self, display: u32, events: Vec<Value>) -> bool {
         if !self.state.borrow().connected || !self.input.is_armed() {
             return false;
@@ -145,6 +175,69 @@ impl Client {
     pub fn report(&self, message: &str) {
         error(&self.state, message);
     }
+
+    pub fn dismiss_error(&self) {
+        self.state.send_modify(|state| state.error.clear());
+    }
+}
+
+struct PendingOperation {
+    state: watch::Sender<State>,
+    operation: Operation,
+}
+
+impl PendingOperation {
+    fn begin(state: &watch::Sender<State>, operation: Operation) -> Option<Self> {
+        state
+            .send_if_modified(|state| state.pending.insert(operation))
+            .then(|| Self {
+                state: state.clone(),
+                operation,
+            })
+    }
+}
+
+impl Drop for PendingOperation {
+    fn drop(&mut self) {
+        self.state.send_modify(|state| {
+            state.pending.remove(&self.operation);
+        });
+    }
+}
+
+fn spawn_operation(
+    workers: &mut JoinSet<Result<()>>,
+    state: &watch::Sender<State>,
+    operation: Operation,
+    future: impl Future<Output = Result<()>> + Send + 'static,
+) {
+    let Some(pending) = PendingOperation::begin(state, operation) else {
+        return;
+    };
+    let state = state.clone();
+    state.send_modify(|state| match operation {
+        Operation::Transfer => state.transfer_status = "Transfer in progress…".into(),
+        Operation::Clipboard => state.clipboard_status = "Clipboard request in progress…".into(),
+        Operation::Listing => {}
+    });
+    workers.spawn(async move {
+        let result = future.await;
+        if result.is_err() {
+            state.send_modify(|state| match operation {
+                Operation::Transfer => {
+                    state.transfer_status =
+                        "Transfer failed. Check the destination before trying again.".into()
+                }
+                Operation::Clipboard => {
+                    state.clipboard_status =
+                        "Clipboard request failed. Nothing is retried automatically.".into()
+                }
+                Operation::Listing => {}
+            });
+        }
+        drop(pending);
+        result
+    });
 }
 
 fn error(state: &watch::Sender<State>, message: impl Into<String>) {
@@ -441,32 +534,32 @@ async fn run(mut commands: mpsc::Receiver<Command>, state: watch::Sender<State>,
                             }
                         }
                         Command::ClipboardGet => {
-                            let control = control.clone(); let state = state.clone();
-                            workers.spawn(async move { read_remote_clipboard(control, state).await });
+                            let control = control.clone(); let output = state.clone();
+                            spawn_operation(&mut workers, &state, Operation::Clipboard, async move { read_remote_clipboard(control, output).await });
                         }
                         Command::ClipboardSet(text) => {
-                            let control = control.clone(); let state = state.clone();
-                            workers.spawn(async move { write_remote_clipboard(control, state, text).await });
+                            let control = control.clone(); let output = state.clone();
+                            spawn_operation(&mut workers, &state, Operation::Clipboard, async move { write_remote_clipboard(control, output, text).await });
                         }
                         Command::List(path) => {
-                            let control = control.clone(); let state = state.clone();
-                            workers.spawn(async move {
+                            let control = control.clone(); let output = state.clone();
+                            spawn_operation(&mut workers, &state, Operation::Listing, async move {
                                 let value = control.call("fs.list", json!({"path":path})).await?;
-                                state.send_modify(|s| s.listing = pretty(&value)); Ok(())
+                                output.send_modify(|s| { s.listing = pretty(&value); s.listing_path = path; }); Ok(())
                             });
                         }
                         Command::Download { remote, local } => {
-                            let handle = connection.handle.clone(); let state = state.clone();
-                            workers.spawn(async move {
+                            let handle = connection.handle.clone(); let output = state.clone();
+                            spawn_operation(&mut workers, &state, Operation::Transfer, async move {
                                 download(handle, remote, local).await?;
-                                state.send_modify(|s| s.status = "Download complete".into()); Ok(())
+                                output.send_modify(|s| { s.status = "Download complete".into(); s.transfer_status = "Download complete · saved without overwriting".into(); }); Ok(())
                             });
                         }
                         Command::Upload { remote, local } => {
-                            let handle = connection.handle.clone(); let state = state.clone();
-                            workers.spawn(async move {
-                                let receipt = upload(handle, remote, local).await?;
-                                state.send_modify(|s| s.status = format!("Upload complete: {receipt}")); Ok(())
+                            let handle = connection.handle.clone(); let output = state.clone();
+                            spawn_operation(&mut workers, &state, Operation::Transfer, async move {
+                                upload(handle, remote, local).await?;
+                                output.send_modify(|s| { s.status = "Upload complete".into(); s.transfer_status = "Upload complete · SHA-256 verified".into(); }); Ok(())
                             });
                         }
                         Command::SaveScreenshot(path) => {
@@ -507,6 +600,10 @@ async fn run(mut commands: mpsc::Receiver<Command>, state: watch::Sender<State>,
             s.capabilities.clear();
             s.displays.clear();
             s.listing.clear();
+            s.listing_path.clear();
+            s.pending.clear();
+            s.transfer_status.clear();
+            s.clipboard_status.clear();
             s.clipboard.clear();
             s.clipboard_revision += 1;
             s.terminal.clear();
@@ -549,6 +646,7 @@ async fn read_remote_clipboard(control: Control, state: watch::Sender<State>) ->
         s.clipboard = text;
         s.clipboard_revision += 1;
         s.status = "Remote clipboard loaded into editor".into();
+        s.clipboard_status = "Remote clipboard loaded into editor".into();
     });
     Ok(())
 }
@@ -564,7 +662,10 @@ async fn write_remote_clipboard(
         response.is_object(),
         "Invalid host clipboard write response"
     );
-    state.send_modify(|s| s.status = "Remote clipboard written".into());
+    state.send_modify(|s| {
+        s.status = "Remote clipboard written".into();
+        s.clipboard_status = "Remote clipboard written".into();
+    });
     Ok(())
 }
 
@@ -828,6 +929,56 @@ fn validate_upload_receipt(receipt: &Value, size: u64, checksum: &str) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn pending_operations_are_single_flight_and_release_after_success_or_error() {
+        for succeeds in [true, false] {
+            let (state, _) = watch::channel(State::default());
+            let mut workers = JoinSet::new();
+            let (complete, ready) = oneshot::channel::<()>();
+            spawn_operation(&mut workers, &state, Operation::Transfer, async move {
+                ready.await?;
+                ensure!(succeeds, "test failure");
+                Ok(())
+            });
+            assert!(state.borrow().pending.contains(&Operation::Transfer));
+            spawn_operation(&mut workers, &state, Operation::Transfer, async {
+                panic!("Duplicate side effect must never be polled");
+            });
+            assert_eq!(workers.len(), 1);
+            complete.send(()).unwrap();
+            assert_eq!(
+                workers.join_next().await.unwrap().unwrap().is_ok(),
+                succeeds
+            );
+            assert!(state.borrow().pending.is_empty());
+            if !succeeds {
+                assert!(
+                    state
+                        .borrow()
+                        .transfer_status
+                        .contains("Check the destination")
+                );
+            }
+            assert!(PendingOperation::begin(&state, Operation::Transfer).is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn aborting_operations_releases_every_group_without_replay() {
+        let (state, _) = watch::channel(State::default());
+        let mut workers = JoinSet::new();
+        for operation in [
+            Operation::Listing,
+            Operation::Transfer,
+            Operation::Clipboard,
+        ] {
+            spawn_operation(&mut workers, &state, operation, std::future::pending());
+        }
+        assert_eq!(state.borrow().pending.len(), 3);
+        workers.abort_all();
+        while workers.join_next().await.is_some() {}
+        assert!(state.borrow().pending.is_empty());
+    }
     #[test]
     fn clipboard_bounds_cover_utf8_nul_and_json_expansion() {
         assert!(validate_clipboard_text("").is_ok());

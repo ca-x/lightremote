@@ -85,6 +85,7 @@ impl Display {
     /// Map a contained image, excluding letterboxing. `x/y` are in local widget points,
     /// independent of OS DPI. Wire coordinates stay display-local; the input service
     /// translates them by this display's (possibly negative) x/y offset.
+    #[cfg(any(not(target_os = "android"), test))]
     pub fn map(self, x: f64, y: f64, width: f64, height: f64) -> Option<(i32, i32)> {
         if ![x, y, width, height].iter().all(|n| n.is_finite()) || width <= 0.0 || height <= 0.0 {
             return None;

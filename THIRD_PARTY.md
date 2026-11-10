@@ -11,8 +11,8 @@ were read for requirements and platform constraints; their source was not copied
 | Reference | Upstream license | Use |
 | --- | --- | --- |
 | LightOS Remote Desktop | PolyForm Noncommercial 1.0.0 | Platform and service architecture reference |
-| uu-remote-linux | GPL-3.0-or-later | Linux host/service behavior reference |
-| RustDesk | AGPL-3.0 | Cross-platform remote-desktop architecture reference |
+| uu-remote-linux | GPL-3.0-or-later | Linux host/service behavior reference; local desktop-session lifetime, backend selection and cancellation reviewed, no source/assets/protocol copied |
+| RustDesk | AGPL-3.0 | Primary interaction reference; local desktop/mobile toolbar, focus release and OS permission boundaries reviewed, no source/assets/protocol copied |
 | Airhand (`sqlpxc/airhand`) | MIT | README, usage and security documentation reviewed for session-oriented controls and explicit permission feedback; no source, assets or protocol copied |
 
 Direct dependencies are recorded exactly in Cargo.lock and the two npm lockfiles.
@@ -30,3 +30,11 @@ SDK release archive; no sibling source checkout is needed.
 Native UI behavior tests use NSH's `nsh-engine` and `nsh-testing` (Apache-2.0),
 pinned to the same commit as the runtime crates. No additional UI or motion
 library is bundled.
+
+The 2026-11-10 local reference review used RustDesk (checkout HEAD
+`bd9262397208c509ea97af61f0d44621ef25611c`) and uu-remote-linux (checkout HEAD
+`fe052cdca7ad90d1ab7c27d031036b1071869070`). These are design references, not
+linked dependencies. See `docs/native-ui.md` for reviewed paths and original
+implementation decisions. Android packaging uses the same pinned NSH runtime,
+Android SDK tools and NDK; it does not incorporate either reference project's
+Android implementation.

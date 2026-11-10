@@ -7,6 +7,7 @@
 #[cfg(feature = "desktop")]
 mod desktop;
 mod files;
+mod platform;
 mod records;
 mod shell;
 
@@ -166,6 +167,7 @@ impl HostServices {
             routes.push("input");
         }
         json!({"desktop_compiled":cfg!(feature="desktop"),"desktop":desktop,"input":input,
+            "platform":{"os":std::env::consts::OS,"desktop_guidance":platform::desktop_guidance(std::env::consts::OS, cfg!(feature="desktop"))},
             "clipboard":clipboard,"shell":config.allow_shell,"files":files,"file_read":files,"file_write":write,
             "routes":routes,"limits":{"file_size":config.max_file_size,"record":records::FRAME_LIMIT,
                 "control_record":CONTROL_LIMIT,"input_record":records::INPUT_LIMIT,

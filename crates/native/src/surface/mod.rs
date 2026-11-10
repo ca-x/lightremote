@@ -13,8 +13,10 @@ pub use macos::components;
 #[cfg(target_os = "windows")]
 pub use windows::components;
 
+#[cfg(not(target_os = "android"))]
 pub const NAME: &str = "lightremote/desktop";
 
+#[cfg(not(target_os = "android"))]
 pub fn key_name(name: &str) -> Option<String> {
     let name = match name {
         "Shift_L" | "Shift_R" | "Shift" => "Shift",

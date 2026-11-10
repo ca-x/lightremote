@@ -2,8 +2,9 @@
 
 ## Scope and intent
 
-Desktop Rust NSH controller for Linux, macOS and Windows. Mobile, Web and TUI
-are not targets of this binary; the browser client remains a separate product.
+Desktop Rust NSH controller for Linux, macOS and Windows, with a separate
+experimental Android viewer entry. Web and TUI are not targets of this binary;
+the browser client remains a separate product.
 Keep the OS title bar and system font. A remote session, not transport internals,
 is the organizing object. No host mode, stored invitations, device history,
 automatic clipboard synchronization or request replay is introduced.
@@ -44,7 +45,8 @@ TMP runtime and permission-gated host services separate.
   status. Never show or persist invitation secrets after submission.
 - Connection and navigation remain outside each workspace's scroll owner.
   Toolbars wrap in narrower windows; fields shrink with `min_w_0`. Default
-  window 1120×860, compact validation viewport 760×700; no mobile claim.
+  window 1120×860, compact desktop validation viewport 760×700. Android has a
+  separate single-scroll viewer; it does not expose the desktop tool workspaces.
 - Keep tab contents mounted so drafts and the terminal survive navigation.
   Workspace panels share one positioned frame and use `invisible`, not
   `display:none`: NSH Terminal otherwise resizes its local emulator and the
@@ -62,6 +64,56 @@ moving indicator. No artificial delay or gesture choreography is introduced.
 This static motion policy also honors reduced motion without a second path.
 No translucency is required for legibility, and no sound is added.
 
+## RustDesk and uu-remote-linux review, 2026-11-10
+
+The primary task is operating one authenticated remote session. The Rust client
+owns connection, capabilities and operation lifetime; NSH signals own only local
+drafts, selected workspace and input arming. Shared semantic tokens and controls
+remain authoritative. Reference behavior is adapted to NSH, not transplanted
+from Flutter or GTK. No new UI, motion or platform-injection dependency is added.
+
+Reviewed RustDesk's `flutter/lib/desktop/widgets/remote_toolbar.dart`,
+`flutter/lib/desktop/pages/remote_page.dart`,
+`flutter/lib/mobile/pages/remote_page.dart` and `src/platform/macos.rs` for
+session-oriented controls, explicit focus ownership, mobile input boundaries and
+separate screen/input consent. Reviewed uu-remote-linux's
+`src/desktop_session.rs`, `src/video_select.rs` and `src/capture_setting.rs` for
+backend selection, cancellation and the distinction between available and
+requested settings. Only requirements and behavior were borrowed.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Invitation form takes space throughout a connected session | Form is hidden after authentication; Cancel/Disconnect stays in the header | Keep the active task and escape path visible without retaining the secret |
+| Remote surface consumes keyboard navigation | Ctrl+Alt+Esc releases remote input and returns focus to the local window | Keyboard users need an explicit exit from remote focus |
+| Repeated file/clipboard presses can start concurrent effects | Bounded per-operation single-flight state and nearby progress text | Prevent duplicate side effects without retries or simulated progress |
+| Directory results can arrive out of order | One listing at a time, with the last successfully loaded path shown | A draft path must not relabel old results |
+| Generic service-unavailable states | Session shows host-specific platform guidance independently of policy | OS consent, build features and host grants are different boundaries |
+| XWayland can make an X11-only injector look ready | Wayland input is refused both in probing and real input construction | Never promise full-desktop control through an unsupported backend |
+| Desktop controls below the touch minimum | Shared actions, fields, selects and tabs have 44-point minimum height | Preserve native interaction feedback while supporting touch targets |
+| No Android app entry | Separate explicitly experimental, read-only Rust NSH viewer | Try genuine packaging without pretending desktop tools work on mobile |
+
+The desktop native surface is proportional to window height; this is media
+geometry, not an arbitrary spacing token. Inactive workspaces remain `invisible`
+to preserve terminal dimensions. Keyboard/pointer forwarding and frequent tab
+changes remain immediate; reduced-motion mode requires no separate animation
+path. Standard headings and errors carry Header/Alert accessibility semantics.
+
+Linux/macOS request focus on the local Desktop tab after release. The pinned
+NSH Windows runtime cannot programmatically focus ordinary tabs and its Tab
+traversal is limited to text fields. The Windows surface therefore intercepts
+the chord in its own Win32 key handler before forwarding Escape, releases mouse
+capture and remote held state, and focuses its parent NSH window. This is a
+local-focus escape, not a claim of complete Windows toolbar keyboard traversal;
+toolbar actions there still need pointer interaction. Windows runtime verification
+remains outstanding.
+
+Android uses a native NavPage inside NavStack, a single scroll owner, safe-area
+insets and keyboard-height avoidance. It connects only on explicit submission,
+starts display 0 capture only on request, and never sends input events. Clipboard,
+terminal, document picking and local file transfers are deliberately absent;
+adding these requires real platform implementation and device validation, not
+desktop filesystem paths. See `docs/android.md`.
+
 ## Verification
 
 Use native headless interaction tests for role/name navigation, disabled
@@ -70,3 +122,11 @@ motion. Run native check / tests / Clippy, `scripts/check.sh`, and CLI end-to-en
 tests separately. Headless results do not establish the actual OS appearance,
 screen-reader behavior, signing, hosted CI or Cloudflare deployment. Record
 unavailable real-window evidence explicitly.
+
+Local Linux evidence for this revision: 32 native interaction/unit tests and
+native Clippy pass; the application was launched through GTK/X11 and its own
+1120×860-requested window was captured at the host-constrained 1280×720 size.
+`docs/screenshots/native-desktop.png` shows the disconnected light appearance.
+The session-bus and ibus modules were unavailable in that environment. This
+verifies a real app-window render only, not remote capture/input, screen-reader
+operation, Windows/macOS runtime behavior or complete light/dark visual parity.

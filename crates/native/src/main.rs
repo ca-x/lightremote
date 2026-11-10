@@ -1,11 +1,5 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-mod client;
-mod desktop;
-mod input;
-mod surface;
-mod ui;
-
 #[cfg(target_os = "linux")]
 use nsh_platform_linux as platform;
 #[cfg(target_os = "macos")]
@@ -16,10 +10,10 @@ use nsh_platform_windows as platform;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn main() -> impl std::process::Termination {
     platform::run_app(
-        platform::AppSource::Rust(ui::root()),
+        platform::AppSource::Rust(roc_remote_native::root()),
         platform::AppOptions {
             title: "roc-remote".into(),
-            components: surface::components(),
+            components: roc_remote_native::components(),
             app_id: "io.github.cax.roc_remote".into(),
             #[cfg(target_os = "windows")]
             icon: std::env::current_exe().ok().and_then(|path| {

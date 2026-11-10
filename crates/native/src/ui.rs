@@ -1,15 +1,22 @@
 //! Native NSH controls; all application data stays on the Rust side.
-use crate::client::{Client, Command, MAX_CLIPBOARD_BYTES, State, validate_clipboard_text};
+use crate::client::{
+    Client, Command, MAX_CLIPBOARD_BYTES, Operation, State, validate_clipboard_text,
+};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use nsh_base::TerminalEvent;
 use nsh_base::{Terminal, TerminalApi, input, tab, tabs, terminal, theme};
+#[cfg(not(target_os = "android"))]
 use nsh_core::element::NativeEvent;
 use nsh_core::prelude::*;
+#[cfg(any(not(target_os = "android"), test))]
 use serde_json::json;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
+#[cfg(not(target_os = "android"))]
+use std::cell::RefCell;
 use std::path::PathBuf;
 
 mod controls;
+mod mobile;
 #[cfg(test)]
 mod tests;
 use controls::{Action, action, choice, field, heading, hint, panel, row};
@@ -112,11 +119,16 @@ pub fn App() -> impl IntoElement {
                 .into_element();
         }
     };
-    workspace(client, snapshot)
+    if cfg!(target_os = "android") {
+        mobile::workspace(client, snapshot)
+    } else {
+        workspace(client, snapshot)
+    }
 }
 
 fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyElement {
     let selected = signal(Workspace::Desktop);
+    let desktop_tab = element_ref();
     let input_active = signal(false);
     let clipboard_draft = signal(String::new());
     let clipboard_seen = Cell::new(0_u64);
@@ -205,6 +217,7 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
     cleanup(move || release.release_input());
     let connect = client.clone();
     let disconnect = client.clone();
+    let dismiss_error = client.clone();
     let caps = client.clone();
     let displays = client.clone();
     let desktop = client.clone();
@@ -241,6 +254,9 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
             let release = release_for_navigation.clone();
             tabs.child(
                 tab()
+                    .when(workspace == Workspace::Desktop, |tab| {
+                        tab.element_ref(&desktop_tab)
+                    })
                     .selected(move || selected.get() == workspace)
                     .on_press(move || {
                         release.release_input();
@@ -249,7 +265,7 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
                     })
                     .px_4()
                     .py_2()
-                    .min_h_10()
+                    .min_h_11()
                     .rounded_md()
                     .bg(move || {
                         if selected.get() == workspace {
@@ -287,19 +303,21 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
                         .child(hint("Your remote workspace. One private session."))))
                 .child(text(move || snapshot.with(|state| if state.connected { "Connected" } else if state.connecting { "Connecting…" } else { "Not connected" }))
                     .text_sm().font_weight(FontWeight::SEMIBOLD).px_3().py_2().rounded_full().bg(move || theme().muted)
-                    .text_color(move || if snapshot.with(|state| state.connected) { theme().color("success").expect("success token") } else { theme().muted_foreground })))
-            .child(view().gap_2().child(hint("Invitation"))
+                    .text_color(move || if snapshot.with(|state| state.connected) { theme().color("success").expect("success token") } else { theme().muted_foreground }))
+                .child(action(move || snapshot.with(|state| if state.connecting { "Cancel" } else { "Disconnect" }), Action::Secondary,
+                    move || snapshot.with(|state| !state.connected && !state.connecting),
+                    move || disconnect.send(Command::Disconnect))))
+            .child(view().gap_2().style_when(move || snapshot.with(|state| state.connected), |style| style.hidden())
+                .child(hint("Invitation"))
                 .child(row().child(field(invitation, "Invitation", "Paste invitation URL or fragment").masked(true)
                     .disabled(move || snapshot.with(|state| state.connected || state.connecting)))
                     .child(action("Connect", Action::Primary,
                         move || invitation.with(|value| value.trim().is_empty()) || snapshot.with(|state| state.connected || state.connecting),
-                        move || { connect.send(Command::Connect(invitation.get_untracked().trim().to_owned())); invitation.set(String::new()); }))
-                    .child(action(move || snapshot.with(|state| if state.connecting { "Cancel" } else { "Disconnect" }), Action::Danger,
-                        move || snapshot.with(|state| !state.connected && !state.connecting),
-                        move || disconnect.send(Command::Disconnect)))))
-            .child(text(move || snapshot.with(|state| state.error.clone())).text_sm()
-                .text_color(move || theme().destructive).selectable(true)
-                .style_when(move || snapshot.with(|state| state.error.is_empty()), |style| style.hidden())))
+                        move || { connect.send(Command::Connect(invitation.get_untracked().trim().to_owned())); invitation.set(String::new()); }))))
+            .child(row().style_when(move || snapshot.with(|state| state.error.is_empty()), |style| style.hidden())
+                .child(text(move || snapshot.with(|state| state.error.clone())).role(AccessibilityRole::Alert)
+                    .flex_1().min_w_0().text_sm().text_color(move || theme().destructive).selectable(true))
+                .child(action("Dismiss", Action::Secondary, || false, move || dismiss_error.dismiss_error()))))
         .child(navigation)
         .child(view().relative().flex_1().min_h_0()
         .child(section(selected, Workspace::Desktop).child(scroll().flex_1().child(view().gap_4()
@@ -312,11 +330,11 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
             .child(when(move || snapshot.with(|state| state.desktop.is_empty()), move || panel()
                 .child(heading("No remote frame yet"))
                 .child(hint("Connect, choose a display, then start viewing. No capture runs automatically."))))
-            .child(desktop_surface(client.clone(), snapshot, selected, input_active)
+            .child(desktop_surface(client.clone(), snapshot, selected, input_active, desktop_tab)
                 .into_element())
             .child(row().child(text(move || if input_active.get() { "Remote input active" } else { "Remote input released" }).text_sm())
                 .child(action("Release input", Action::Secondary, move || !input_active.get(), move || { release_control.release_input(); input_active.set(false); })))
-            .child(hint("Click the image to control when input is granted. Moving focus away or switching tools releases keys and buttons."))
+            .child(hint("Click to control when permitted. Ctrl+Alt+Esc returns to local controls. Changing focus releases held keys and buttons."))
             .child(panel().child(hint("Save a frame"))
                 .child(row().child(field(screenshot_path, "Save image path", "New local .jpg path"))
                     .child(action("Save image", Action::Secondary, move || screenshot_path.with(String::is_empty) || snapshot.with(|state| state.screenshot.is_empty()), move || save_image.send(Command::SaveScreenshot(PathBuf::from(screenshot_path.get_untracked()))))))
@@ -332,7 +350,7 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
             .child(view().gap_2().child(heading("Remote terminal")).child(permission_notice(snapshot, "shell")))
             .child(row()
                 .child(action("Open shell", Action::Primary, move || snapshot.with(|state| !state.allows("shell") || state.shell_running), move || open_shell.send(Command::OpenShell)))
-                .child(action("Close shell", Action::Secondary, move || !snapshot.with(|state| state.shell_running), move || close_shell.send(Command::CloseShell)))
+                .child(action("Close shell", Action::Danger, move || !snapshot.with(|state| state.shell_running), move || close_shell.send(Command::CloseShell)))
                 .child(action("Interrupt · Ctrl+C", Action::Secondary, move || !snapshot.with(|state| state.shell_running), move || interrupt.send(Command::Shell(vec![3])))))
             .child(hint("Click the terminal to type. Closing the shell ends the remote process; switching tools keeps it open."))
             .child(terminal().component_ref(&terminal_ref).scrollback(1000)
@@ -343,13 +361,19 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
             .child(view().gap_2().child(heading("Shared files")).child(permission_notice(snapshot, "file_read")))
             .child(panel().child(hint("Remote path · relative to the host's opened share"))
                 .child(row().child(field(remote_path, "Remote relative path", "Directory or file in the share"))
-                    .child(action("List directory", Action::Primary, move || !snapshot.with(|state| state.allows("file_read")), move || list.send(Command::List(remote_path.get_untracked())))))
+                    .child(action("List directory", Action::Primary, move || remote_path.with(|path| path.trim().is_empty()) || !snapshot.with(|state| state.allows("file_read") && !state.pending.contains(&Operation::Listing)), move || list.send(Command::List(remote_path.get_untracked())))))
+                .child(text(move || snapshot.with(|state| {
+                    if state.pending.contains(&Operation::Listing) { format!("Loading directory… Showing: {}", if state.listing_path.is_empty() { "no directory" } else { &state.listing_path }) }
+                    else if state.listing_path.is_empty() { "No directory loaded".to_owned() }
+                    else { format!("Loaded directory: {}", state.listing_path) }
+                })).text_sm().text_color(move || theme().muted_foreground))
                 .child(file_listing(snapshot)))
             .child(panel().child(hint("Local file path"))
                 .child(field(local_path, "Local file path", "Destination for download / source for upload"))
                 .child(row()
-                    .child(action("Download file", Action::Secondary, move || local_path.with(String::is_empty) || !snapshot.with(|state| state.allows("file_read")), move || download.send(Command::Download { remote: remote_path.get_untracked(), local: PathBuf::from(local_path.get_untracked()) })))
-                    .child(action("Upload file", Action::Secondary, move || local_path.with(String::is_empty) || !snapshot.with(|state| state.allows("file_write")), move || upload.send(Command::Upload { remote: remote_path.get_untracked(), local: PathBuf::from(local_path.get_untracked()) }))))
+                    .child(action("Download file", Action::Secondary, move || local_path.with(String::is_empty) || !snapshot.with(|state| state.allows("file_read") && !state.pending.contains(&Operation::Transfer)), move || download.send(Command::Download { remote: remote_path.get_untracked(), local: PathBuf::from(local_path.get_untracked()) })))
+                    .child(action("Upload file", Action::Secondary, move || local_path.with(String::is_empty) || !snapshot.with(|state| state.allows("file_write") && !state.pending.contains(&Operation::Transfer)), move || upload.send(Command::Upload { remote: remote_path.get_untracked(), local: PathBuf::from(local_path.get_untracked()) }))))
+                .child(text(move || snapshot.with(|state| state.transfer_status.clone())).role(AccessibilityRole::Summary).text_sm())
                 .child(hint("Uploads need separate write permission. Transfers never overwrite an existing destination.")))
         )))
         .child(section(selected, Workspace::Clipboard).child(scroll().flex_1().child(view().gap_4()
@@ -364,14 +388,16 @@ fn workspace(client: Client, snapshot: Signal<State>) -> nsh_core::element::AnyE
             .child(text(move || clipboard_draft.with(|text| validate_clipboard_text(text).err().map(|error| error.to_string()).unwrap_or_default()))
                 .label("Clipboard validation").text_sm().text_color(move || theme().destructive))
             .child(row()
-                .child(action("Read remote", Action::Secondary, move || !snapshot.with(|state| state.allows("clipboard")), move || clipboard_read.send(Command::ClipboardGet)))
-                .child(action("Write remote", Action::Primary, move || !snapshot.with(|state| state.allows("clipboard")) || clipboard_draft.with(|text| validate_clipboard_text(text).is_err()), move || clipboard_write.send(Command::ClipboardSet(clipboard_draft.get_untracked())))))
+                .child(action("Read remote", Action::Secondary, move || !snapshot.with(|state| state.allows("clipboard") && !state.pending.contains(&Operation::Clipboard)), move || clipboard_read.send(Command::ClipboardGet)))
+                .child(action("Write remote", Action::Primary, move || !snapshot.with(|state| state.allows("clipboard") && !state.pending.contains(&Operation::Clipboard)) || clipboard_draft.with(|text| validate_clipboard_text(text).is_err()), move || clipboard_write.send(Command::ClipboardSet(clipboard_draft.get_untracked())))))
+            .child(text(move || snapshot.with(|state| state.clipboard_status.clone())).role(AccessibilityRole::Summary).text_sm())
             .child(row()
                 .child(action("Paste local", Action::Secondary, || false, move || { let client = clipboard_paste.clone(); spawn(async move { let value = clipboard_string().await; match validate_clipboard_text(&value) { Ok(()) => clipboard_draft.set(value), Err(error) => client.report(&error.to_string()) } }); }))
                 .child(action("Copy editor locally", Action::Secondary, move || clipboard_draft.with(|text| validate_clipboard_text(text).is_err()), move || { let value = clipboard_draft.get_untracked(); match validate_clipboard_text(&value) { Ok(()) => set_clipboard(value), Err(error) => clipboard_copy.report(&error.to_string()) } })))
         )))
         .child(section(selected, Workspace::Session).child(scroll().flex_1().child(view().gap_4()
             .child(view().gap_2().child(heading("Session permissions")).child(hint("The host decides what this session can do. Everything defaults off.")))
+            .child(text(move || snapshot.with(State::platform_guidance)).text_sm().selectable(true))
             .child(panel().child(permissions(snapshot))
                 .child(action("Refresh permissions", Action::Secondary, move || !snapshot.with(|state| state.connected), move || caps.send(Command::Capabilities))))
             .child(hint("Disconnect to end this session. Reconnecting never automatically repeats a file, clipboard or terminal operation."))
@@ -476,19 +502,24 @@ fn start_desktop(client: &Client, display: Signal<String>, single: bool) {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn desktop_surface(
     client: Client,
     snapshot: Signal<State>,
     selected: Signal<Workspace>,
     active: Signal<bool>,
+    local_focus: ElementRef,
 ) -> impl IntoElement {
     let wheel = RefCell::new((0.0_f64, 0.0_f64));
+    let release_shortcut = RefCell::new(crate::input::ReleaseShortcut::default());
     native(crate::surface::NAME)
+        .label("Remote desktop. Ctrl+Alt+Esc returns to local controls.")
         .prop("frame", move || {
             json!(snapshot.with(|s| s.desktop.to_string()))
         })
         .w_full()
-        .h_96()
+        .h(move || window().height * 0.5)
+        .min_h_48()
         .bg(move || theme().color("remote-canvas").expect("remote canvas token"))
         .style_when(
             move || snapshot.with(|state| state.desktop.is_empty()),
@@ -499,6 +530,13 @@ fn desktop_surface(
                 return;
             }
             let event = &event.data;
+            if release_shortcut.borrow_mut().update(event) {
+                active.set(false);
+                *wheel.borrow_mut() = (0.0, 0.0);
+                client.release_input();
+                local_focus.focus();
+                return;
+            }
             if !matches!(event["type"].as_str(), Some("release" | "error"))
                 && (selected.get_untracked() != Workspace::Desktop
                     || !snapshot
@@ -589,4 +627,18 @@ fn desktop_surface(
                 active.set(false);
             }
         })
+}
+
+#[cfg(target_os = "android")]
+fn desktop_surface(
+    _client: Client,
+    snapshot: Signal<State>,
+    _selected: Signal<Workspace>,
+    _active: Signal<bool>,
+    _local_focus: ElementRef,
+) -> impl IntoElement {
+    image(move || snapshot.with(|state| state.desktop.to_string()))
+        .label("Read-only remote desktop preview")
+        .w_full()
+        .h(move || window().height * 0.5)
 }

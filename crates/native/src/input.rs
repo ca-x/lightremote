@@ -18,6 +18,44 @@ use tokio::{
     sync::{mpsc, watch},
 };
 
+#[cfg(any(not(target_os = "android"), test))]
+#[derive(Default)]
+pub struct ReleaseShortcut(BTreeSet<String>);
+
+#[cfg(any(not(target_os = "android"), test))]
+impl ReleaseShortcut {
+    pub fn update(&mut self, event: &Value) -> bool {
+        if event["type"] == "release" {
+            self.0.clear();
+        }
+        if let Some(modifiers) = event["modifiers"].as_array() {
+            for modifier in ["Control", "Alt", "Shift", "Meta"] {
+                if modifiers.iter().any(|value| value == modifier) {
+                    self.0.insert(modifier.into());
+                } else {
+                    self.0.remove(modifier);
+                }
+            }
+        }
+        if event["type"] != "key" {
+            return false;
+        }
+        let Some(key) = event["key"].as_str() else {
+            return false;
+        };
+        if event["down"] == true {
+            self.0.insert(key.to_owned());
+            if key == "Escape" && self.0.contains("Control") && self.0.contains("Alt") {
+                self.0.clear();
+                return true;
+            }
+        } else {
+            self.0.remove(key);
+        }
+        false
+    }
+}
+
 #[derive(Clone)]
 pub struct Bridge {
     sender: Arc<Mutex<Option<mpsc::Sender<Event>>>>,
@@ -48,6 +86,7 @@ impl Bridge {
         self.sender.lock().expect("input bridge lock").take();
         self.release();
     }
+    #[cfg(not(target_os = "android"))]
     pub fn is_armed(&self) -> bool {
         self.armed.load(Ordering::Acquire)
     }
@@ -237,6 +276,30 @@ async fn session(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn local_release_requires_chord_and_clears_on_focus_loss() {
+        let mut shortcut = ReleaseShortcut::default();
+        assert!(!shortcut.update(&json!({"type":"key","key":"Escape","down":true})));
+        assert!(!shortcut.update(&json!({"type":"key","key":"Control","down":true})));
+        assert!(!shortcut.update(&json!({"type":"key","key":"Alt","down":true})));
+        assert!(!shortcut.update(&json!({"type":"key","key":"Escape","down":false})));
+        assert!(shortcut.update(&json!({"type":"key","key":"Escape","down":true})));
+        assert!(!shortcut.update(&json!({"type":"key","key":"Escape","down":true})));
+        shortcut.update(&json!({"type":"key","key":"Control","down":true}));
+        shortcut.update(&json!({"type":"key","key":"Alt","down":true}));
+        shortcut.update(&json!({"type":"release"}));
+        assert!(!shortcut.update(&json!({"type":"key","key":"Escape","down":true})));
+    }
+
+    #[test]
+    fn local_release_tracks_modifiers_held_before_surface_focus() {
+        let mut shortcut = ReleaseShortcut::default();
+        shortcut.update(&json!({"type":"button","modifiers":["Control","Alt"]}));
+        assert!(shortcut.update(&json!({"type":"key","key":"Escape","down":true})));
+        shortcut.update(&json!({"type":"button","modifiers":["Control","Alt"]}));
+        shortcut.update(&json!({"type":"key","key":"Alt","down":false}));
+        assert!(!shortcut.update(&json!({"type":"key","key":"Escape","down":true})));
+    }
     #[test]
     fn blur_epoch_never_replays_old_events_and_queue_overflow_releases() {
         let bridge = Bridge::new();

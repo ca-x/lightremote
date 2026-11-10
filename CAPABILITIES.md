@@ -37,3 +37,22 @@ experimental until a real OS session is tested.
 See docs/review.md for the scoped review and docs/verification.md for
 commands and CI run identifiers. No physical desktop support is inferred from a
 protocol fixture or compilation alone.
+
+## Rebrand and native refinement evidence (2026-11-10)
+
+Historical rows above retain their original counts and platform limitations.
+The current native controller has 32 passing unit/interaction tests and native
+Clippy coverage, including single-flight operations, input-release shortcuts,
+terminal geometry and the experimental mobile boundary. A real GTK/X11 app
+window was captured in `docs/screenshots/native-desktop.png`; it is not evidence
+of remote host capture/input or macOS/Windows runtime acceptance.
+
+The X11-only host injector now explicitly refuses detected Wayland sessions,
+even when XWayland exists. The native Session view displays additive host OS
+guidance without granting permissions or making readiness claims.
+
+Android ARM64 is an experimental **read-only viewer**: a real APK was built and
+its package, minimum SDK 28 / target SDK 35, ELF architecture, 16-KiB alignment
+and Android Debug signature were checked. No emulator/device runtime, store
+release, release-key signing or Android host support is verified. See
+`docs/android.md`; the APK is not in the hosted desktop release asset matrix.

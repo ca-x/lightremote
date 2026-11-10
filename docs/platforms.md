@@ -10,6 +10,10 @@ Host desktop capture uses xcap; input uses enigo's X11 backend. X11 is the first
 backend to validate. Wayland compositors may expose a capture portal, but native
 Wayland input/permission flows are not implemented as a complete product. Use an
 X11 session for initial desktop testing; unsupported backends return errors.
+When `XDG_SESSION_TYPE=wayland` or a nonempty `WAYLAND_DISPLAY` is present,
+this build advertises input as unavailable and rejects input-stream creation.
+An available XWayland socket must not silently authorize partial desktop input.
+No portal, uinput, libei, compositor service or privilege is installed implicitly.
 
 NSH uses GTK4. The following Debian/Ubuntu packages cover the first CI builds:
 
@@ -39,6 +43,13 @@ UAC secure-desktop control, lock-screen control or session-0 service interaction
 PTY uses portable-pty's Windows backend. Distribution is initially unsigned.
 
 ## Operational behavior
+
+The `capabilities` application response includes optional
+`platform.os` and `platform.desktop_guidance` fields. These are advisory platform
+requirements, not a successful capture or an OS-permission grant. Older clients
+can ignore them; existing permission booleans and route authorization remain
+authoritative. The native Session view shows this guidance without exposing
+host paths, environment values or credentials.
 
 Every session is attended through a one-time invitation. Closing the session
 cancels PTY workers and incomplete uploads and releases tracked pressed input.

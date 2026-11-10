@@ -1,0 +1,14 @@
+{
+  "name": "roc-remote",
+  "id": "io.github.cax.roc_remote",
+  "version": "0.1.0",
+  "build": 1,
+  "appearance": "system",
+  "rust": ".",
+  "root": "App",
+  "theme": "src/ui/theme.json",
+  "icon": "../../assets/branding/logo.png",
+  "android": {
+    "targetSdk": 35
+  }
+}

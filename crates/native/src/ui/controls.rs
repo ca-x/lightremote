@@ -19,7 +19,7 @@ pub fn action(
         .on_press(run)
         .px_4()
         .py_2()
-        .min_h_10()
+        .min_h_11()
         .items_center()
         .justify_center()
         .rounded(move || theme().radius)
@@ -57,7 +57,7 @@ pub fn field(value: Signal<String>, label: &'static str, placeholder: &'static s
         .placeholder(placeholder)
         .px_3()
         .py_2()
-        .min_h_10()
+        .min_h_11()
         .border_1()
         .border_color(move || theme().input)
         .focus(|style| style.outline(px(2.0)).outline_color(move || theme().ring))
@@ -69,7 +69,11 @@ pub fn field(value: Signal<String>, label: &'static str, placeholder: &'static s
 }
 
 pub fn heading(label: &'static str) -> impl IntoElement {
-    text(label).text_xl().font_weight(FontWeight::SEMIBOLD)
+    text(label)
+        .role(AccessibilityRole::Header)
+        .accessibility_level(2)
+        .text_lg()
+        .font_weight(FontWeight::SEMIBOLD)
 }
 
 pub fn choice(
@@ -108,7 +112,7 @@ pub fn choice(
         .disabled_style(|style| style.opacity(0.45))
         .trigger(
             view()
-                .min_h_10()
+                .min_h_11()
                 .px_3()
                 .py_2()
                 .justify_center()

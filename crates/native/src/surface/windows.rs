@@ -267,6 +267,17 @@ unsafe extern "system" fn window_proc(
                 }
             }
             WM_KEYDOWN | WM_SYSKEYDOWN => {
+                if wparam.0 == usize::from(VK_ESCAPE.0)
+                    && GetKeyState(i32::from(VK_CONTROL.0)) < 0
+                    && GetKeyState(i32::from(VK_MENU.0)) < 0
+                {
+                    release(data);
+                    let _ = ReleaseCapture();
+                    if let Ok(parent) = GetParent(hwnd) {
+                        let _ = SetFocus(Some(parent));
+                    }
+                    return LRESULT(0);
+                }
                 if !data.keys.borrow().contains_key(&wparam.0)
                     && let Some(key) = key(wparam.0)
                 {

@@ -56,6 +56,9 @@ jobs:
         run: cargo build --locked --release --target "$TARGET" -p roc-remote -p roc-remote-relay
       - name: Build native NSH controller
         run: cargo build --locked --release --target "$TARGET" -p roc-remote-native
+      - name: Verify native interaction and operation lifetime regressions
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: cargo test --locked --release --target "$TARGET" -p roc-remote-native
       - name: Build headless CLI without desktop dependencies
         run: cargo build --locked --release --target "$TARGET" --target-dir target/headless -p roc-remote --no-default-features
       - name: Package unsigned binaries
